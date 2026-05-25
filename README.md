@@ -48,9 +48,11 @@ In that mode, edit the local document first, sync, and the mock should log a `PU
 - Import and export `.md` files.
 - Switch between mind map mode and Markdown mode.
 - Add child nodes from any node.
+- Use keyboard shortcuts in map mode: Enter adds a sibling below the selected node, Tab adds a child, Delete deletes the selection, and Backquote edits the selected node note.
 - Double-click a node title to edit it.
 - Right-click a node for add, edit title, edit note, and delete.
 - Delete confirmation removes the selected node and all descendants.
+- Ctrl-drag box-selects multiple nodes for batch deletion; holding Space temporarily pans the canvas from anywhere without changing zoom.
 - Pan, zoom, and focus the selected node.
 - Hover or click nodes with notes to show note bubbles.
 - Note bubbles render basic Markdown: paragraphs, lists, bold, emphasis, and inline code.
@@ -79,7 +81,7 @@ Grandchild note.
 - `H2-H6` become child nodes by heading level.
 - Body text under a heading becomes that node's note.
 - Missing `H1` creates a root from the file name and shows a warning.
-- Multiple `H1` headings show a warning and only the first root is parsed.
+- Multiple `H1` headings show a warning; additional `H1` sections and their descendants are parsed under the first root.
 
 ## WebDAV Notes
 

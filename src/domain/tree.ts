@@ -3,6 +3,16 @@ import type { MindNode } from "./types";
 
 type NodeUpdater = (node: MindNode) => MindNode;
 
+function createEmptyNode(level: number, title: string, nodeId = createNodeId("node")): MindNode {
+  return {
+    id: nodeId,
+    title,
+    note: "",
+    level,
+    children: [],
+  };
+}
+
 function mapNode(node: MindNode, targetId: string, updater: NodeUpdater): MindNode {
   if (node.id === targetId) {
     return updater(node);
@@ -14,20 +24,37 @@ function mapNode(node: MindNode, targetId: string, updater: NodeUpdater): MindNo
   };
 }
 
-export function addChildNode(root: MindNode, parentId: string, title = "New node"): MindNode {
+export function addChildNode(root: MindNode, parentId: string, title = "New node", nodeId?: string): MindNode {
   return mapNode(root, parentId, (node) => ({
     ...node,
     children: [
       ...node.children,
-      {
-        id: createNodeId("node"),
-        title,
-        note: "",
-        level: Math.min(node.level + 1, 6),
-        children: [],
-      },
+      createEmptyNode(Math.min(node.level + 1, 6), title, nodeId),
     ],
   }));
+}
+
+export function addSiblingNode(root: MindNode, targetId: string, title = "New node", nodeId?: string): MindNode {
+  if (root.id === targetId) {
+    return addChildNode(root, root.id, title, nodeId);
+  }
+
+  function insertBelow(node: MindNode): MindNode {
+    const children = node.children.flatMap((child) => {
+      const nextChild = insertBelow(child);
+      if (child.id === targetId) {
+        return [nextChild, createEmptyNode(child.level, title, nodeId)];
+      }
+      return [nextChild];
+    });
+
+    return {
+      ...node,
+      children,
+    };
+  }
+
+  return insertBelow(root);
 }
 
 export function updateNodeTitle(root: MindNode, nodeId: string, title: string): MindNode {
@@ -54,6 +81,24 @@ export function deleteNode(root: MindNode, nodeId: string): MindNode {
       ...node,
       children: node.children
         .filter((child) => child.id !== nodeId)
+        .map((child) => removeFrom(child)),
+    };
+  }
+
+  return removeFrom(root);
+}
+
+export function deleteNodes(root: MindNode, nodeIds: string[]): MindNode {
+  const targets = new Set(nodeIds.filter((nodeId) => nodeId !== root.id));
+  if (!targets.size) {
+    return root;
+  }
+
+  function removeFrom(node: MindNode): MindNode {
+    return {
+      ...node,
+      children: node.children
+        .filter((child) => !targets.has(child.id))
         .map((child) => removeFrom(child)),
     };
   }

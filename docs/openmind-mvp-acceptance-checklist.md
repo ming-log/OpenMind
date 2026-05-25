@@ -22,7 +22,7 @@ Use this checklist after `npm run dev` and, for sync checks, `npm run mock:webda
 - [ ] Replace the Markdown with an `H1`, `H2`, and `H3` hierarchy.
 - [ ] Switch back to map mode and confirm the tree and notes are regenerated.
 - [ ] Remove the `H1`, switch back, and confirm the app uses the file/default name as root and shows a warning.
-- [ ] Add a second `H1`, switch back, and confirm the app warns that only the first root was parsed.
+- [ ] Add a second `H1` with nested `H2/H3` headings, switch back, and confirm those sections are parsed as nodes under the first root with a warning.
 
 ## Note Bubbles
 
