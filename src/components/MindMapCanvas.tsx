@@ -148,6 +148,10 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
 
   useEffect(() => {
     function keydown(event: KeyboardEvent): void {
+      if (editor || deleteTarget || menu) {
+        return;
+      }
+
       if (isEditableTarget(event.target)) {
         return;
       }
@@ -221,7 +225,7 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
       window.removeEventListener("keyup", keyup);
       window.removeEventListener("blur", blur);
     };
-  }, [byId, props]);
+  }, [byId, deleteTarget, editor, menu, props]);
 
   const normalizedSelection = selectionBox ? normalizeSelectionBox(selectionBox) : null;
 
