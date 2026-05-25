@@ -177,9 +177,10 @@ export default function App() {
                 setMessage("根节点不能删除");
                 return;
               }
-              if (window.confirm("删除该节点及全部子节点？")) {
-                updateRoot(deleteNode(documentState.root, nodeId));
-              }
+              const nextRoot = deleteNode(documentState.root, nodeId);
+              updateRoot(nextRoot);
+              setSelectedId(nextRoot.id);
+              setMessage("已删除节点");
             }}
           />
         )}
