@@ -4,11 +4,12 @@ import { MindMapCanvas } from "./components/MindMapCanvas";
 import { SettingsModal } from "./components/SettingsModal";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
+import { createNodeId } from "./domain/ids";
 import { createDefaultDocument, parseMarkdown, serializeMarkdown } from "./domain/markdown";
 import { exportTreeAsPng } from "./domain/pngExport";
 import { loadPersistedState, savePersistedState } from "./domain/storage";
 import { synchronizeDocument, testWebDavConnection } from "./domain/sync";
-import { addChildNode, deleteNode, updateNodeNote, updateNodeTitle } from "./domain/tree";
+import { addChildNode, addSiblingNode, deleteNodes, updateNodeNote, updateNodeTitle } from "./domain/tree";
 import type { BackupEntry, DocumentState, WebDavConfig } from "./domain/types";
 
 type Mode = "map" | "markdown";
@@ -39,11 +40,12 @@ export default function App() {
   const [backups, setBackups] = useState<BackupEntry[]>(initial.backups);
   const [webDavConfig, setWebDavConfig] = useState<WebDavConfig>(initial.webDavConfig);
   const [mode, setMode] = useState<Mode>("map");
-  const [selectedId, setSelectedId] = useState(initial.document.root.id);
+  const [selectedIds, setSelectedIds] = useState<string[]>([initial.document.root.id]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [testMessage, setTestMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const selectedId = selectedIds[0] ?? documentState.root.id;
 
   useEffect(() => {
     savePersistedState(window.localStorage, {
@@ -55,7 +57,7 @@ export default function App() {
 
   function replaceDocument(next: DocumentState): void {
     setDocumentState(next);
-    setSelectedId(next.root.id);
+    setSelectedIds([next.root.id]);
   }
 
   function newDocument(): void {
@@ -94,7 +96,7 @@ export default function App() {
         root: parsed.root,
         warnings: parsed.warnings,
       }));
-      setSelectedId(parsed.root.id);
+      setSelectedIds([parsed.root.id]);
     }
     setMode(nextMode);
   }
@@ -102,6 +104,30 @@ export default function App() {
   function updateRoot(nextRoot: DocumentState["root"]): void {
     const markdown = serializeMarkdown(nextRoot);
     setDocumentState((current) => markDirty(current, markdown, nextRoot, current.warnings));
+  }
+
+  function addChild(parentId: string): void {
+    const nodeId = createNodeId("node");
+    updateRoot(addChildNode(documentState.root, parentId, "新节点", nodeId));
+    setSelectedIds([nodeId]);
+  }
+
+  function addSibling(nodeId: string): void {
+    const nextNodeId = createNodeId("node");
+    updateRoot(addSiblingNode(documentState.root, nodeId, "新节点", nextNodeId));
+    setSelectedIds([nextNodeId]);
+  }
+
+  function deleteSelection(nodeIds: string[]): void {
+    const removableIds = Array.from(new Set(nodeIds)).filter((nodeId) => nodeId !== documentState.root.id);
+    if (!removableIds.length) {
+      setMessage("根节点不能删除");
+      return;
+    }
+
+    updateRoot(deleteNodes(documentState.root, removableIds));
+    setSelectedIds([documentState.root.id]);
+    setMessage(removableIds.length === 1 ? "已删除节点" : `已删除 ${removableIds.length} 个节点`);
   }
 
   function syncNow(): void {
@@ -120,7 +146,7 @@ export default function App() {
           warnings: parsed.warnings,
         });
         setBackups((current) => [...result.backups, ...current]);
-        setSelectedId(parsed.root.id);
+        setSelectedIds([parsed.root.id]);
         setMessage(result.message);
       })
       .catch((error: unknown) => {
@@ -168,20 +194,14 @@ export default function App() {
           <MindMapCanvas
             root={documentState.root}
             selectedId={selectedId}
-            onSelect={setSelectedId}
-            onAddChild={(nodeId) => updateRoot(addChildNode(documentState.root, nodeId, "新节点"))}
+            selectedIds={selectedIds}
+            onSelect={(nodeId) => setSelectedIds([nodeId])}
+            onSelectMany={setSelectedIds}
+            onAddChild={addChild}
+            onAddSibling={addSibling}
             onEditTitle={(nodeId, title) => updateRoot(updateNodeTitle(documentState.root, nodeId, title))}
             onEditNote={(nodeId, note) => updateRoot(updateNodeNote(documentState.root, nodeId, note))}
-            onDelete={(nodeId) => {
-              if (nodeId === documentState.root.id) {
-                setMessage("根节点不能删除");
-                return;
-              }
-              const nextRoot = deleteNode(documentState.root, nodeId);
-              updateRoot(nextRoot);
-              setSelectedId(nextRoot.id);
-              setMessage("已删除节点");
-            }}
+            onDeleteSelection={deleteSelection}
           />
         )}
       </main>
