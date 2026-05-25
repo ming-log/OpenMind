@@ -79,7 +79,7 @@ Grandchild note.
 - `H2-H6` become child nodes by heading level.
 - Body text under a heading becomes that node's note.
 - Missing `H1` creates a root from the file name and shows a warning.
-- Multiple `H1` headings show a warning and only the first root is parsed.
+- Multiple `H1` headings show a warning; additional `H1` sections and their descendants are parsed under the first root.
 
 ## WebDAV Notes
 

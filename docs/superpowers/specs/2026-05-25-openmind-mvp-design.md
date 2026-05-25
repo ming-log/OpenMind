@@ -69,7 +69,7 @@ export interface WebDavConfig {
 - Text between a heading and the next same-or-higher heading becomes that node's note.
 - Empty note text is valid.
 - If no `H1` exists, the parser creates a root from the file name or a default title and treats the original content as the root note.
-- If multiple `H1` headings exist, the first becomes root and later `H1` sections are ignored with a parse warning visible in the UI.
+- If multiple `H1` headings exist, the first becomes root and later `H1` sections and descendants are parsed under it with a parse warning visible in the UI.
 - Non-heading Markdown is preserved only as node notes; rich node content, links between nodes, tags, colors, and icons are outside MVP scope.
 
 ## Primary UI
