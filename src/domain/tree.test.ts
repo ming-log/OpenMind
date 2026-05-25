@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MindNode } from "./types";
-import { addChildNode, deleteNode, updateNodeNote, updateNodeTitle } from "./tree";
+import { addChildNode, addSiblingNode, deleteNode, deleteNodes, updateNodeNote, updateNodeTitle } from "./tree";
 
 function fixture(): MindNode {
   return {
@@ -18,6 +18,13 @@ function fixture(): MindNode {
           { id: "a1", title: "A1", note: "", level: 3, children: [] },
         ],
       },
+      {
+        id: "b",
+        title: "B",
+        note: "",
+        level: 2,
+        children: [],
+      },
     ],
   };
 }
@@ -28,6 +35,29 @@ describe("tree editing helpers", () => {
 
     expect(root.children[0].children.map((node) => node.title)).toEqual(["A1", "New node"]);
     expect(root.children[0].children[1].level).toBe(3);
+  });
+
+  it("adds a sibling immediately below the requested node", () => {
+    const root = addSiblingNode(fixture(), "a", "Inserted", "inserted");
+    const nested = addSiblingNode(fixture(), "a1", "A2", "a2");
+
+    expect(root.children.map((node) => node.title)).toEqual(["A", "Inserted", "B"]);
+    expect(root.children[1]).toMatchObject({
+      id: "inserted",
+      title: "Inserted",
+      note: "",
+      level: 2,
+      children: [],
+    });
+    expect(nested.children[0].children.map((node) => node.title)).toEqual(["A1", "A2"]);
+    expect(nested.children[0].children[1].level).toBe(3);
+  });
+
+  it("adds a child when a sibling is requested for the root", () => {
+    const root = addSiblingNode(fixture(), "root", "Main topic", "main");
+
+    expect(root.children.map((node) => node.title)).toEqual(["A", "B", "Main topic"]);
+    expect(root.children[2].level).toBe(2);
   });
 
   it("updates titles and notes immutably", () => {
@@ -44,7 +74,15 @@ describe("tree editing helpers", () => {
     const removed = deleteNode(fixture(), "a");
     const rootProtected = deleteNode(fixture(), "root");
 
-    expect(removed.children).toEqual([]);
-    expect(rootProtected.children).toHaveLength(1);
+    expect(removed.children.map((node) => node.id)).toEqual(["b"]);
+    expect(rootProtected.children).toHaveLength(2);
+  });
+
+  it("deletes multiple nodes in one immutable edit while protecting the root", () => {
+    const removed = deleteNodes(fixture(), ["root", "a1", "b"]);
+
+    expect(removed.id).toBe("root");
+    expect(removed.children.map((node) => node.id)).toEqual(["a"]);
+    expect(removed.children[0].children).toEqual([]);
   });
 });

@@ -1,16 +1,20 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { layoutTree } from "../domain/pngExport";
+import { getIntersectingNodeIds, normalizeSelectionBox, type SelectableNodeRect, type SelectionBox } from "../domain/selection";
 import type { MindNode } from "../domain/types";
 import { NoteBubble } from "./NoteBubble";
 
 interface MindMapCanvasProps {
   root: MindNode;
   selectedId?: string;
+  selectedIds: string[];
   onSelect: (nodeId: string) => void;
+  onSelectMany: (nodeIds: string[]) => void;
   onAddChild: (nodeId: string) => void;
+  onAddSibling: (nodeId: string) => void;
   onEditTitle: (nodeId: string, title: string) => void;
   onEditNote: (nodeId: string, note: string) => void;
-  onDelete: (nodeId: string) => void;
+  onDeleteSelection: (nodeIds: string[]) => void;
 }
 
 const NODE_WIDTH = 180;
@@ -18,11 +22,17 @@ const NODE_HEIGHT = 54;
 const PADDING = 160;
 
 export function MindMapCanvas(props: MindMapCanvasProps) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const suppressClickRef = useRef(false);
   const nodes = useMemo(() => layoutTree(props.root), [props.root]);
   const byId = useMemo(() => new Map(nodes.map((entry) => [entry.node.id, entry])), [nodes]);
+  const selectedSet = useMemo(() => new Set(props.selectedIds), [props.selectedIds]);
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 80, y: 80 });
   const [dragStart, setDragStart] = useState<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
+  const [isCtrlSelecting, setIsCtrlSelecting] = useState(false);
+  const [isSpacePanning, setIsSpacePanning] = useState(false);
   const [menu, setMenu] = useState<{ node: MindNode; x: number; y: number } | null>(null);
   const [pinnedNoteId, setPinnedNoteId] = useState<string | null>(null);
 
@@ -45,18 +55,153 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
     setMenu(null);
   }
 
+  function isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+    const tagName = target.tagName.toLowerCase();
+    return target.isContentEditable || tagName === "input" || tagName === "textarea" || tagName === "select";
+  }
+
+  function getViewportPoint(event: React.MouseEvent): { x: number; y: number } {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    return {
+      x: event.clientX - (rect?.left ?? 0),
+      y: event.clientY - (rect?.top ?? 0),
+    };
+  }
+
+  function getSelectableNodeRects(): SelectableNodeRect[] {
+    return nodes.map((entry) => ({
+      id: entry.node.id,
+      left: pan.x + (PADDING + entry.x) * scale,
+      top: pan.y + (PADDING + entry.y) * scale,
+      width: NODE_WIDTH * scale,
+      height: NODE_HEIGHT * scale,
+    }));
+  }
+
+  function clearSuppressedClickSoon(): void {
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
+  }
+
+  useEffect(() => {
+    function keydown(event: KeyboardEvent): void {
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      if (event.key === "Control") {
+        setIsCtrlSelecting(true);
+        return;
+      }
+      if (event.code === "Space") {
+        event.preventDefault();
+        setIsSpacePanning(true);
+        return;
+      }
+      if (event.repeat) {
+        return;
+      }
+
+      const selectedId = props.selectedId ?? props.selectedIds[0];
+      if (!selectedId) {
+        return;
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        setMenu(null);
+        props.onAddSibling(selectedId);
+        return;
+      }
+      if (event.key === "Tab") {
+        event.preventDefault();
+        setMenu(null);
+        props.onAddChild(selectedId);
+        return;
+      }
+      if (event.key === "Delete") {
+        event.preventDefault();
+        setMenu(null);
+        props.onDeleteSelection(props.selectedIds.length ? props.selectedIds : [selectedId]);
+        return;
+      }
+      if (event.key === "`" || event.code === "Backquote") {
+        event.preventDefault();
+        const selected = byId.get(selectedId);
+        if (selected) {
+          editNote(selected.node);
+        }
+      }
+    }
+
+    function keyup(event: KeyboardEvent): void {
+      if (event.key === "Control") {
+        setIsCtrlSelecting(false);
+      }
+      if (event.code === "Space") {
+        setIsSpacePanning(false);
+      }
+    }
+
+    function blur(): void {
+      setIsCtrlSelecting(false);
+      setIsSpacePanning(false);
+      setDragStart(null);
+      setSelectionBox(null);
+    }
+
+    window.addEventListener("keydown", keydown);
+    window.addEventListener("keyup", keyup);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", keydown);
+      window.removeEventListener("keyup", keyup);
+      window.removeEventListener("blur", blur);
+    };
+  }, [byId, props]);
+
+  const normalizedSelection = selectionBox ? normalizeSelectionBox(selectionBox) : null;
+
   return (
     <section
-      className="map-shell"
+      className={`map-shell ${isSpacePanning ? "space-panning" : ""} ${isCtrlSelecting ? "ctrl-selecting" : ""}`}
       onMouseMove={(event) => {
-        if (!dragStart) return;
-        setPan({
-          x: dragStart.panX + event.clientX - dragStart.x,
-          y: dragStart.panY + event.clientY - dragStart.y,
-        });
+        if (selectionBox) {
+          const point = getViewportPoint(event);
+          setSelectionBox({ ...selectionBox, endX: point.x, endY: point.y });
+          return;
+        }
+        if (dragStart) {
+          setPan({
+            x: dragStart.panX + event.clientX - dragStart.x,
+            y: dragStart.panY + event.clientY - dragStart.y,
+          });
+        }
       }}
-      onMouseUp={() => setDragStart(null)}
-      onMouseLeave={() => setDragStart(null)}
+      onMouseUp={(event) => {
+        if (selectionBox) {
+          const point = getViewportPoint(event);
+          const finalSelection = { ...selectionBox, endX: point.x, endY: point.y };
+          const selected = getIntersectingNodeIds(finalSelection, getSelectableNodeRects());
+          if (selected.length) {
+            props.onSelectMany(selected);
+          }
+          setSelectionBox(null);
+        }
+        setDragStart(null);
+        if (suppressClickRef.current) {
+          clearSuppressedClickSoon();
+        }
+      }}
+      onMouseLeave={() => {
+        setDragStart(null);
+        setSelectionBox(null);
+        suppressClickRef.current = false;
+      }}
       onWheel={(event) => {
         event.preventDefault();
         setScale((value) => Math.min(1.8, Math.max(0.35, value - event.deltaY * 0.001)));
@@ -80,14 +225,44 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
         </button>
       </div>
       <div
-        className="map-viewport"
+        ref={viewportRef}
+        className={`map-viewport ${dragStart || isSpacePanning ? "panning" : ""} ${isCtrlSelecting ? "selecting" : ""}`}
         onMouseDown={(event) => {
+          if (event.button !== 0) {
+            return;
+          }
+          if (event.ctrlKey || isCtrlSelecting) {
+            event.preventDefault();
+            setMenu(null);
+            const point = getViewportPoint(event);
+            suppressClickRef.current = true;
+            setSelectionBox({ startX: point.x, startY: point.y, endX: point.x, endY: point.y });
+            return;
+          }
+          if (isSpacePanning) {
+            event.preventDefault();
+            setMenu(null);
+            suppressClickRef.current = true;
+            setDragStart({ x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y });
+            return;
+          }
           if (event.target === event.currentTarget) {
             setMenu(null);
             setDragStart({ x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y });
           }
         }}
       >
+        {normalizedSelection ? (
+          <div
+            className="selection-box"
+            style={{
+              left: normalizedSelection.left,
+              top: normalizedSelection.top,
+              width: normalizedSelection.right - normalizedSelection.left,
+              height: normalizedSelection.bottom - normalizedSelection.top,
+            }}
+          />
+        ) : null}
         <div
           className="map-stage"
           style={{
@@ -117,10 +292,14 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
           </svg>
           {nodes.map((entry) => (
             <article
-              className={`mind-node level-${entry.node.level} ${props.selectedId === entry.node.id ? "selected" : ""}`}
+              className={`mind-node level-${entry.node.level} ${selectedSet.has(entry.node.id) ? "selected" : ""} ${props.selectedIds.length > 1 && selectedSet.has(entry.node.id) ? "multi-selected" : ""}`}
               key={entry.node.id}
               style={{ left: PADDING + entry.x, top: PADDING + entry.y }}
               onClick={() => {
+                if (suppressClickRef.current) {
+                  suppressClickRef.current = false;
+                  return;
+                }
                 props.onSelect(entry.node.id);
                 setPinnedNoteId((current) => (current === entry.node.id ? null : entry.node.id));
               }}
@@ -131,7 +310,19 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
                 setMenu({ node: entry.node, x: event.clientX, y: event.clientY });
               }}
             >
-              <button className="node-add" onClick={(event) => { event.stopPropagation(); props.onAddChild(entry.node.id); }}>＋</button>
+              <button
+                className="node-add"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (suppressClickRef.current) {
+                    event.preventDefault();
+                    return;
+                  }
+                  props.onAddChild(entry.node.id);
+                }}
+              >
+                ＋
+              </button>
               <strong>{entry.node.title}</strong>
               {entry.node.note.trim() ? <span className="note-dot">●</span> : null}
               {entry.node.note.trim() && (pinnedNoteId === entry.node.id) ? <NoteBubble note={entry.node.note} pinned /> : null}
@@ -145,7 +336,7 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
           <button onClick={() => { props.onAddChild(menu.node.id); setMenu(null); }}>新增子节点</button>
           <button onClick={() => editTitle(menu.node)}>编辑标题</button>
           <button onClick={() => editNote(menu.node)}>编辑批注</button>
-          <button onClick={() => { props.onDelete(menu.node.id); setMenu(null); }}>删除节点</button>
+          <button onClick={() => { props.onDeleteSelection([menu.node.id]); setMenu(null); }}>删除节点</button>
         </div>
       ) : null}
     </section>

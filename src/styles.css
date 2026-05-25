@@ -152,6 +152,20 @@ button:disabled {
   overflow: hidden;
 }
 
+.map-viewport.panning,
+.map-shell.space-panning .mind-node {
+  cursor: grab;
+}
+
+.map-viewport.panning:active,
+.map-shell.space-panning .mind-node:active {
+  cursor: grabbing;
+}
+
+.map-viewport.selecting {
+  cursor: crosshair;
+}
+
 .map-stage {
   position: absolute;
   left: 0;
@@ -190,6 +204,13 @@ button:disabled {
 
 .mind-node.selected {
   outline: 3px solid rgba(199, 137, 64, 0.45);
+}
+
+.mind-node.multi-selected {
+  outline-color: rgba(37, 92, 74, 0.55);
+  box-shadow:
+    0 0 0 4px rgba(255, 253, 248, 0.9),
+    0 12px 28px rgba(38, 60, 53, 0.18);
 }
 
 .mind-node strong {
@@ -286,6 +307,14 @@ button:disabled {
   width: 52px;
   text-align: center;
   font-size: 13px;
+}
+
+.selection-box {
+  position: absolute;
+  z-index: 7;
+  pointer-events: none;
+  border: 1px solid rgba(37, 92, 74, 0.72);
+  background: rgba(37, 92, 74, 0.12);
 }
 
 .context-menu {
