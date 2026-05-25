@@ -78,10 +78,10 @@ export function parseMarkdown(markdown: string, fileName = "OpenMind.md"): Parse
     return { root, warnings };
   }
 
-  const additionalH1Index = tokens.findIndex((token, index) => index > firstH1Index && token.level === 1);
-  const scopedTokens = additionalH1Index === -1 ? tokens.slice(firstH1Index) : tokens.slice(firstH1Index, additionalH1Index);
-  if (additionalH1Index !== -1) {
-    warnings.push("Markdown has multiple H1 headings; only the first one was parsed.");
+  const scopedTokens = tokens.slice(firstH1Index);
+  const hasAdditionalH1 = scopedTokens.some((token, index) => index > 0 && token.level === 1);
+  if (hasAdditionalH1) {
+    warnings.push("Markdown has multiple H1 headings; additional H1 sections were parsed under the first root.");
   }
 
   const nodes = scopedTokens.map((token, index) => headingToNode(token, index));
