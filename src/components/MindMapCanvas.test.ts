@@ -10,7 +10,13 @@ describe("mind map node dialogs", () => {
   });
 
   it("gates canvas keyboard shortcuts while overlays are open", () => {
-    expect(canvasSource).toContain("editor || deleteTarget || menu");
+    expect(canvasSource).toContain("titleEditor || noteDrawer || deleteTarget || menu");
     expect(canvasSource).toContain("return;");
+  });
+
+  it("uses inline title editing and a side drawer for note editing", () => {
+    expect(canvasSource).toContain("node-title-input");
+    expect(canvasSource).toContain("note-drawer");
+    expect(canvasSource).not.toContain("编辑标题\" : \"编辑批注");
   });
 });

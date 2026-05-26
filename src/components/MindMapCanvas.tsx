@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { calculateCenteredPan, findDropIntent, type DropIntent, type DropNodeRect } from "../domain/canvasLayout";
 import { layoutTree } from "../domain/pngExport";
 import { getIntersectingNodeIds, normalizeSelectionBox, type SelectableNodeRect, type SelectionBox } from "../domain/selection";
 import type { MindNode } from "../domain/types";
@@ -15,17 +16,12 @@ interface MindMapCanvasProps {
   onEditTitle: (nodeId: string, title: string) => void;
   onEditNote: (nodeId: string, note: string) => void;
   onDeleteSelection: (nodeIds: string[]) => void;
+  onMoveSubtree: (nodeId: string, newParentId: string, index: number) => void;
 }
 
 const NODE_WIDTH = 180;
 const NODE_HEIGHT = 54;
 const PADDING = 160;
-
-type NodeEditor = {
-  kind: "title" | "note";
-  node: MindNode;
-  value: string;
-};
 
 type DeleteTarget = {
   nodeIds: string[];
@@ -33,60 +29,117 @@ type DeleteTarget = {
   count: number;
 };
 
+type NodeDrag = {
+  nodeId: string;
+  startX: number;
+  startY: number;
+  deltaX: number;
+  deltaY: number;
+};
+
+type TitleEditor = {
+  nodeId: string;
+  value: string;
+};
+
+type NoteDrawer = {
+  node: MindNode;
+  value: string;
+};
+
 export function MindMapCanvas(props: MindMapCanvasProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const suppressClickRef = useRef(false);
+  const pendingCenterRef = useRef(false);
   const nodes = useMemo(() => layoutTree(props.root), [props.root]);
   const byId = useMemo(() => new Map(nodes.map((entry) => [entry.node.id, entry])), [nodes]);
+  const nodeRelations = useMemo(() => {
+    const relations = new Map<string, { parentId: string; index: number }>();
+
+    function walk(node: MindNode, parentId: string, index: number): void {
+      relations.set(node.id, { parentId, index });
+      node.children.forEach((child, childIndex) => walk(child, node.id, childIndex));
+    }
+
+    walk(props.root, props.root.id, 0);
+    return relations;
+  }, [props.root]);
   const selectedSet = useMemo(() => new Set(props.selectedIds), [props.selectedIds]);
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 80, y: 80 });
   const [dragStart, setDragStart] = useState<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const [nodeDrag, setNodeDrag] = useState<NodeDrag | null>(null);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
   const [isCtrlSelecting, setIsCtrlSelecting] = useState(false);
   const [isSpacePanning, setIsSpacePanning] = useState(false);
   const [menu, setMenu] = useState<{ node: MindNode; x: number; y: number } | null>(null);
   const [pinnedNoteId, setPinnedNoteId] = useState<string | null>(null);
-  const [editor, setEditor] = useState<NodeEditor | null>(null);
+  const [titleEditor, setTitleEditor] = useState<TitleEditor | null>(null);
+  const [noteDrawer, setNoteDrawer] = useState<NoteDrawer | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
-  const titleInputRef = useRef<HTMLInputElement>(null);
   const noteInputRef = useRef<HTMLTextAreaElement>(null);
 
   const width = Math.max(...nodes.map((entry) => entry.x)) + NODE_WIDTH + PADDING * 2;
   const height = Math.max(...nodes.map((entry) => entry.y)) + NODE_HEIGHT + PADDING * 2;
+  const draggedIds = useMemo(() => {
+    if (!nodeDrag) {
+      return new Set<string>();
+    }
+
+    const draggedNode = byId.get(nodeDrag.nodeId)?.node;
+    const ids = new Set<string>();
+    if (!draggedNode) {
+      return ids;
+    }
+
+    function collect(node: MindNode): void {
+      ids.add(node.id);
+      node.children.forEach(collect);
+    }
+
+    collect(draggedNode);
+    return ids;
+  }, [byId, nodeDrag]);
+  const nodeDragOffset = nodeDrag ? { x: nodeDrag.deltaX / scale, y: nodeDrag.deltaY / scale } : { x: 0, y: 0 };
 
   useEffect(() => {
-    if (!editor) return;
+    if (!noteDrawer) return;
+    noteInputRef.current?.focus();
+  }, [noteDrawer]);
 
-    if (editor.kind === "title") {
-      titleInputRef.current?.focus();
-      titleInputRef.current?.select();
+  useEffect(() => {
+    if (!pendingCenterRef.current) {
       return;
     }
 
-    noteInputRef.current?.focus();
-  }, [editor]);
+    pendingCenterRef.current = false;
+    window.requestAnimationFrame(() => centerMap());
+  }, [height, width]);
 
-  function openEditor(node: MindNode, kind: NodeEditor["kind"]): void {
-    setEditor({
-      kind,
-      node,
-      value: kind === "title" ? node.title : node.note,
-    });
+  function startTitleEdit(node: MindNode): void {
+    setTitleEditor({ nodeId: node.id, value: node.title });
     setDeleteTarget(null);
     setMenu(null);
   }
 
-  function saveEditor(): void {
-    if (!editor) return;
+  function saveTitleEdit(): void {
+    if (!titleEditor) return;
 
-    if (editor.kind === "title") {
-      props.onEditTitle(editor.node.id, editor.value);
-    } else {
-      props.onEditNote(editor.node.id, editor.value);
-    }
+    props.onEditTitle(titleEditor.nodeId, titleEditor.value);
+    setTitleEditor(null);
+  }
 
-    setEditor(null);
+  function openNoteDrawer(node: MindNode): void {
+    setNoteDrawer({ node, value: node.note });
+    setDeleteTarget(null);
+    setMenu(null);
+  }
+
+  function saveNoteDrawer(): void {
+    if (!noteDrawer) return;
+
+    props.onEditNote(noteDrawer.node.id, noteDrawer.value);
+    setNoteDrawer(null);
   }
 
   function requestDelete(nodeIds: string[]): void {
@@ -103,7 +156,8 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
       title: removableIds.length === 1 ? firstNode?.title ?? "节点" : `${removableIds.length} 个节点`,
       count: removableIds.length,
     });
-    setEditor(null);
+    setTitleEditor(null);
+    setNoteDrawer(null);
     setMenu(null);
   }
 
@@ -123,10 +177,14 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
   }
 
   function getViewportPoint(event: React.MouseEvent): { x: number; y: number } {
+    return getViewportPointFromClient(event.clientX, event.clientY);
+  }
+
+  function getViewportPointFromClient(clientX: number, clientY: number): { x: number; y: number } {
     const rect = viewportRef.current?.getBoundingClientRect();
     return {
-      x: event.clientX - (rect?.left ?? 0),
-      y: event.clientY - (rect?.top ?? 0),
+      x: clientX - (rect?.left ?? 0),
+      y: clientY - (rect?.top ?? 0),
     };
   }
 
@@ -146,9 +204,80 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
     }, 0);
   }
 
+  function centerMap(nextScale = scale): void {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+
+    setPan(calculateCenteredPan({
+      viewportWidth: rect.width,
+      viewportHeight: rect.height,
+      contentWidth: width,
+      contentHeight: height,
+      scale: nextScale,
+    }));
+  }
+
+  function getDropNodeRects(): DropNodeRect[] {
+    return nodes.map((entry) => {
+      const relation = nodeRelations.get(entry.node.id) ?? { parentId: props.root.id, index: 0 };
+      return {
+        id: entry.node.id,
+        parentId: relation.parentId,
+        index: relation.index,
+        left: pan.x + (PADDING + entry.x) * scale,
+        top: pan.y + (PADDING + entry.y) * scale,
+        width: NODE_WIDTH * scale,
+        height: NODE_HEIGHT * scale,
+      };
+    });
+  }
+
+  function finishNodeDrag(drag: NodeDrag, clientX: number, clientY: number, excludedIds: Set<string>): void {
+    const intent = findDropIntent(getViewportPointFromClient(clientX, clientY), getDropNodeRects(), excludedIds);
+    if (intent) {
+      pendingCenterRef.current = true;
+      props.onMoveSubtree(drag.nodeId, intent.parentId, intent.index);
+    } else {
+      centerMap();
+    }
+    setNodeDrag(null);
+  }
+
+  useEffect(() => {
+    if (!nodeDrag) {
+      return;
+    }
+    const activeDrag = nodeDrag;
+
+    function mousemove(event: MouseEvent): void {
+      suppressClickRef.current = true;
+      setNodeDrag((current) => current
+        ? {
+          ...current,
+          deltaX: event.clientX - current.startX,
+          deltaY: event.clientY - current.startY,
+        }
+        : current);
+    }
+
+    function mouseup(event: MouseEvent): void {
+      suppressClickRef.current = true;
+      finishNodeDrag(activeDrag, event.clientX, event.clientY, draggedIds);
+    }
+
+    window.addEventListener("mousemove", mousemove);
+    window.addEventListener("mouseup", mouseup);
+    return () => {
+      window.removeEventListener("mousemove", mousemove);
+      window.removeEventListener("mouseup", mouseup);
+    };
+  }, [draggedIds, nodeDrag, props]);
+
   useEffect(() => {
     function keydown(event: KeyboardEvent): void {
-      if (editor || deleteTarget || menu) {
+      if (titleEditor || noteDrawer || deleteTarget || menu) {
         return;
       }
 
@@ -196,7 +325,7 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
         event.preventDefault();
         const selected = byId.get(selectedId);
         if (selected) {
-          openEditor(selected.node, "note");
+          openNoteDrawer(selected.node);
         }
       }
     }
@@ -214,6 +343,7 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
       setIsCtrlSelecting(false);
       setIsSpacePanning(false);
       setDragStart(null);
+      setNodeDrag(null);
       setSelectionBox(null);
     }
 
@@ -225,9 +355,33 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
       window.removeEventListener("keyup", keyup);
       window.removeEventListener("blur", blur);
     };
-  }, [byId, deleteTarget, editor, menu, props]);
+  }, [byId, deleteTarget, menu, noteDrawer, props, titleEditor]);
 
   const normalizedSelection = selectionBox ? normalizeSelectionBox(selectionBox) : null;
+  const activeDropIntent = nodeDrag
+    ? findDropIntent(getViewportPointFromClient(nodeDrag.startX + nodeDrag.deltaX, nodeDrag.startY + nodeDrag.deltaY), getDropNodeRects(), draggedIds)
+    : undefined;
+
+  function getDropPreviewStyle(intent: DropIntent): CSSProperties | undefined {
+    const target = byId.get(intent.targetId);
+    if (!target) {
+      return undefined;
+    }
+
+    if (intent.placement === "inside") {
+      return {
+        left: PADDING + target.x + NODE_WIDTH + 26,
+        top: PADDING + target.y + NODE_HEIGHT / 2 - 2,
+        width: 74,
+      };
+    }
+
+    return {
+      left: PADDING + target.x - 8,
+      top: PADDING + target.y + (intent.placement === "before" ? -8 : NODE_HEIGHT + 6),
+      width: NODE_WIDTH + 16,
+    };
+  }
 
   return (
     <section
@@ -274,7 +428,15 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
         <button onClick={() => setScale((value) => Math.max(0.35, value - 0.1))}>−</button>
         <span>{Math.round(scale * 100)}%</span>
         <button onClick={() => setScale((value) => Math.min(1.8, value + 0.1))}>＋</button>
-        <button onClick={() => { setPan({ x: 80, y: 80 }); setScale(1); }}>⌂</button>
+        <button
+          onClick={() => {
+            setScale(1);
+            centerMap(1);
+          }}
+          title="自动排版并居中"
+        >
+          ⌂
+        </button>
         <button
           onClick={() => {
             const selected = props.selectedId ? byId.get(props.selectedId) : byId.get(props.root.id);
@@ -339,10 +501,12 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
               entry.node.children.map((child) => {
                 const childEntry = byId.get(child.id);
                 if (!childEntry) return null;
-                const startX = PADDING + entry.x + NODE_WIDTH;
-                const startY = PADDING + entry.y + NODE_HEIGHT / 2;
-                const endX = PADDING + childEntry.x;
-                const endY = PADDING + childEntry.y + NODE_HEIGHT / 2;
+                const parentDragged = draggedIds.has(entry.node.id);
+                const childDragged = draggedIds.has(child.id);
+                const startX = PADDING + entry.x + NODE_WIDTH + (parentDragged ? nodeDragOffset.x : 0);
+                const startY = PADDING + entry.y + NODE_HEIGHT / 2 + (parentDragged ? nodeDragOffset.y : 0);
+                const endX = PADDING + childEntry.x + (childDragged ? nodeDragOffset.x : 0);
+                const endY = PADDING + childEntry.y + NODE_HEIGHT / 2 + (childDragged ? nodeDragOffset.y : 0);
                 const midX = (startX + endX) / 2;
                 return (
                   <path
@@ -353,11 +517,21 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
               }),
             )}
           </svg>
+          {activeDropIntent ? (
+            <div
+              className={`drop-preview ${activeDropIntent.placement}`}
+              style={getDropPreviewStyle(activeDropIntent)}
+            />
+          ) : null}
           {nodes.map((entry) => (
             <article
-              className={`mind-node level-${entry.node.level} ${selectedSet.has(entry.node.id) ? "selected" : ""} ${props.selectedIds.length > 1 && selectedSet.has(entry.node.id) ? "multi-selected" : ""}`}
+              className={`mind-node level-${entry.node.level} ${selectedSet.has(entry.node.id) ? "selected" : ""} ${props.selectedIds.length > 1 && selectedSet.has(entry.node.id) ? "multi-selected" : ""} ${draggedIds.has(entry.node.id) ? "dragging" : ""} ${activeDropIntent?.targetId === entry.node.id ? "drop-target" : ""}`}
               key={entry.node.id}
-              style={{ left: PADDING + entry.x, top: PADDING + entry.y }}
+              style={{
+                left: PADDING + entry.x,
+                top: PADDING + entry.y,
+                transform: draggedIds.has(entry.node.id) ? `translate(${nodeDragOffset.x}px, ${nodeDragOffset.y}px)` : undefined,
+              }}
               onClick={() => {
                 if (suppressClickRef.current) {
                   suppressClickRef.current = false;
@@ -366,7 +540,30 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
                 props.onSelect(entry.node.id);
                 setPinnedNoteId((current) => (current === entry.node.id ? null : entry.node.id));
               }}
-              onDoubleClick={() => openEditor(entry.node, "title")}
+              onDoubleClick={(event) => {
+                event.stopPropagation();
+                startTitleEdit(entry.node);
+              }}
+              onMouseDown={(event) => {
+                if (entry.node.id === props.root.id || event.button !== 0 || event.ctrlKey || isCtrlSelecting || isSpacePanning) {
+                  return;
+                }
+                if (event.target instanceof HTMLElement && event.target.closest("button")) {
+                  return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                setMenu(null);
+                props.onSelect(entry.node.id);
+                setNodeDrag({
+                  nodeId: entry.node.id,
+                  startX: event.clientX,
+                  startY: event.clientY,
+                  deltaX: 0,
+                  deltaY: 0,
+                });
+              }}
               onContextMenu={(event) => {
                 event.preventDefault();
                 props.onSelect(entry.node.id);
@@ -386,7 +583,30 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
               >
                 ＋
               </button>
-              <strong>{entry.node.title}</strong>
+              {titleEditor?.nodeId === entry.node.id ? (
+                <input
+                  autoFocus
+                  className="node-title-input"
+                  value={titleEditor.value}
+                  onBlur={saveTitleEdit}
+                  onChange={(event) => setTitleEditor({ ...titleEditor, value: event.target.value })}
+                  onClick={(event) => event.stopPropagation()}
+                  onDoubleClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      saveTitleEdit();
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setTitleEditor(null);
+                    }
+                  }}
+                  onMouseDown={(event) => event.stopPropagation()}
+                />
+              ) : (
+                <strong>{entry.node.title}</strong>
+              )}
               {entry.node.note.trim() ? <span className="note-dot">●</span> : null}
               {entry.node.note.trim() && (pinnedNoteId === entry.node.id) ? <NoteBubble note={entry.node.note} pinned /> : null}
               {entry.node.note.trim() ? <NoteBubble note={entry.node.note} /> : null}
@@ -397,8 +617,8 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
       {menu ? (
         <div className="context-menu" style={{ left: menu.x, top: menu.y }}>
           <button onClick={() => { props.onAddChild(menu.node.id); setMenu(null); }}>新增子节点</button>
-          <button onClick={() => openEditor(menu.node, "title")}>编辑标题</button>
-          <button onClick={() => openEditor(menu.node, "note")}>编辑批注</button>
+          <button onClick={() => startTitleEdit(menu.node)}>编辑标题</button>
+          <button onClick={() => openNoteDrawer(menu.node)}>编辑批注</button>
           <button
             disabled={menu.node.id === props.root.id}
             onClick={() => requestDelete([menu.node.id])}
@@ -408,54 +628,39 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
           </button>
         </div>
       ) : null}
-      {editor ? (
-        <div className="modal-backdrop node-dialog-backdrop" onMouseDown={() => setEditor(null)}>
+      {noteDrawer ? (
+        <aside className="note-drawer" aria-label="编辑批注">
           <form
-            aria-modal="true"
-            className="node-dialog"
-            onMouseDown={(event) => event.stopPropagation()}
             onSubmit={(event) => {
               event.preventDefault();
-              saveEditor();
+              saveNoteDrawer();
             }}
-            role="dialog"
           >
             <header>
               <div>
-                <span>{editor.kind === "title" ? "编辑标题" : "编辑批注"}</span>
-                <strong>{editor.node.title}</strong>
+                <span>编辑批注</span>
+                <strong>{noteDrawer.node.title}</strong>
               </div>
-              <button aria-label="关闭" onClick={() => setEditor(null)} type="button">×</button>
+              <button aria-label="关闭" onClick={() => setNoteDrawer(null)} type="button">×</button>
             </header>
             <label className="node-dialog-field">
-              <span>{editor.kind === "title" ? "节点标题" : "节点批注"}</span>
-              {editor.kind === "title" ? (
-                <input
-                  ref={titleInputRef}
-                  value={editor.value}
-                  onChange={(event) => setEditor({ ...editor, value: event.target.value })}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") setEditor(null);
-                  }}
-                />
-              ) : (
-                <textarea
-                  ref={noteInputRef}
-                  rows={5}
-                  value={editor.value}
-                  onChange={(event) => setEditor({ ...editor, value: event.target.value })}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") setEditor(null);
-                  }}
-                />
-              )}
+              <span>节点批注</span>
+              <textarea
+                ref={noteInputRef}
+                rows={12}
+                value={noteDrawer.value}
+                onChange={(event) => setNoteDrawer({ ...noteDrawer, value: event.target.value })}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setNoteDrawer(null);
+                }}
+              />
             </label>
             <footer>
-              <button type="button" onClick={() => setEditor(null)}>取消</button>
+              <button type="button" onClick={() => setNoteDrawer(null)}>取消</button>
               <button className="primary" type="submit">保存</button>
             </footer>
           </form>
-        </div>
+        </aside>
       ) : null}
       {deleteTarget ? (
         <div className="modal-backdrop node-dialog-backdrop" onMouseDown={() => setDeleteTarget(null)}>

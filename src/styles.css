@@ -1,7 +1,7 @@
 :root {
   color: #1f2d28;
   background: #ece7dc;
-  font-family: "Aptos", "Segoe UI", sans-serif;
+  font-family: "Times New Roman", "Microsoft YaHei", serif;
   line-height: 1.4;
 }
 
@@ -70,7 +70,7 @@ button:disabled {
   border-radius: 50%;
   background: #255c4a;
   color: #fff7e8;
-  font-family: Georgia, serif;
+  font-family: "Times New Roman", "Microsoft YaHei", serif;
   font-weight: 700;
 }
 
@@ -130,7 +130,7 @@ button:disabled {
   outline: 0;
   background: #fffdf8;
   color: #1f2d28;
-  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-family: "Times New Roman", "Microsoft YaHei", serif;
   font-size: 15px;
   line-height: 1.65;
 }
@@ -195,6 +195,20 @@ button:disabled {
   background: #fffdf8;
   box-shadow: 0 10px 24px rgba(38, 60, 53, 0.12);
   cursor: pointer;
+  transition: box-shadow 120ms ease, outline-color 120ms ease;
+  user-select: none;
+}
+
+.mind-node.dragging {
+  z-index: 4;
+  cursor: grabbing;
+  opacity: 0.92;
+  box-shadow: 0 18px 38px rgba(38, 60, 53, 0.24);
+}
+
+.mind-node.drop-target {
+  outline: 3px solid rgba(37, 92, 74, 0.7);
+  outline-offset: 5px;
 }
 
 .mind-node.level-1 {
@@ -216,8 +230,20 @@ button:disabled {
 .mind-node strong {
   display: block;
   overflow-wrap: anywhere;
-  font-family: Georgia, serif;
   font-size: 15px;
+}
+
+.node-title-input {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid #6d826d;
+  border-radius: 6px;
+  padding: 3px 6px;
+  outline: 0;
+  background: #fffaf0;
+  color: #1f2d28;
+  box-shadow: 0 0 0 3px rgba(109, 130, 109, 0.14);
+  font-weight: 700;
 }
 
 .node-add {
@@ -272,8 +298,29 @@ button:disabled {
   padding: 1px 5px;
   border-radius: 5px;
   background: #efe6d4;
-  font-family: "Cascadia Code", Consolas, monospace;
+  font-family: "Times New Roman", "Microsoft YaHei", serif;
   font-size: 12px;
+}
+
+.drop-preview {
+  position: absolute;
+  z-index: 6;
+  height: 4px;
+  pointer-events: none;
+  border-radius: 999px;
+  background: #c78940;
+  box-shadow: 0 0 0 4px rgba(199, 137, 64, 0.18);
+}
+
+.drop-preview.inside::after {
+  position: absolute;
+  right: -8px;
+  top: -5px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #c78940;
+  content: "";
 }
 
 .note-bubble.hover {
@@ -415,8 +462,71 @@ button:disabled {
 
 .node-dialog header strong {
   overflow-wrap: anywhere;
-  font-family: Georgia, serif;
   font-size: 18px;
+}
+
+.note-drawer {
+  position: fixed;
+  top: 64px;
+  right: 0;
+  bottom: 34px;
+  z-index: 22;
+  width: min(420px, calc(100vw - 56px));
+  padding: 18px;
+  border-left: 1px solid #cfc5b5;
+  background: #fffdf8;
+  box-shadow: -18px 0 44px rgba(31, 45, 40, 0.18);
+}
+
+.note-drawer form {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 16px;
+  height: 100%;
+}
+
+.note-drawer header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.note-drawer header div {
+  display: grid;
+  gap: 4px;
+}
+
+.note-drawer header span {
+  color: #667067;
+  font-size: 12px;
+}
+
+.note-drawer header strong {
+  overflow-wrap: anywhere;
+  font-size: 18px;
+}
+
+.note-drawer header button {
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.note-drawer .node-dialog-field {
+  min-height: 0;
+}
+
+.note-drawer textarea {
+  height: 100%;
+  min-height: 260px;
+}
+
+.note-drawer footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .node-dialog header button {
@@ -507,7 +617,6 @@ button:disabled {
 .settings-modal h2,
 .settings-modal h3 {
   margin: 0;
-  font-family: Georgia, serif;
 }
 
 .settings-grid {
