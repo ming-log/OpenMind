@@ -9,7 +9,7 @@ import { createDefaultDocument, parseMarkdown, serializeMarkdown } from "./domai
 import { exportTreeAsPng } from "./domain/pngExport";
 import { loadPersistedState, savePersistedState } from "./domain/storage";
 import { synchronizeDocument, testWebDavConnection } from "./domain/sync";
-import { addChildNode, addSiblingNode, deleteNodes, updateNodeNote, updateNodeTitle } from "./domain/tree";
+import { addChildNode, addSiblingNode, deleteNodes, moveSubtree, updateNodeNote, updateNodeTitle } from "./domain/tree";
 import type { BackupEntry, DocumentState, WebDavConfig } from "./domain/types";
 
 type Mode = "map" | "markdown";
@@ -130,6 +130,17 @@ export default function App() {
     setMessage(removableIds.length === 1 ? "已删除节点" : `已删除 ${removableIds.length} 个节点`);
   }
 
+  function moveNode(nodeId: string, newParentId: string): void {
+    const nextRoot = moveSubtree(documentState.root, nodeId, newParentId);
+    if (nextRoot === documentState.root) {
+      return;
+    }
+
+    updateRoot(nextRoot);
+    setSelectedIds([nodeId]);
+    setMessage("已移动节点并自动排版");
+  }
+
   function syncNow(): void {
     if (!webDavConfig.serverUrl) {
       setSettingsOpen(true);
@@ -202,6 +213,7 @@ export default function App() {
             onEditTitle={(nodeId, title) => updateRoot(updateNodeTitle(documentState.root, nodeId, title))}
             onEditNote={(nodeId, note) => updateRoot(updateNodeNote(documentState.root, nodeId, note))}
             onDeleteSelection={deleteSelection}
+            onMoveSubtree={moveNode}
           />
         )}
       </main>

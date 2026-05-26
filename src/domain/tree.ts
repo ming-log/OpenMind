@@ -106,6 +106,49 @@ export function deleteNodes(root: MindNode, nodeIds: string[]): MindNode {
   return removeFrom(root);
 }
 
+export function moveSubtree(root: MindNode, movingId: string, newParentId: string): MindNode {
+  if (movingId === root.id || movingId === newParentId) {
+    return root;
+  }
+
+  const movingNode = findNode(root, movingId);
+  const newParent = findNode(root, newParentId);
+  if (!movingNode || !newParent || findNode(movingNode, newParentId)) {
+    return root;
+  }
+
+  const movedNode = relevelSubtree(movingNode, Math.min(newParent.level + 1, 6));
+
+  function moveFrom(node: MindNode): MindNode {
+    if (node.id === newParentId) {
+      return {
+        ...node,
+        children: [
+          ...node.children.filter((child) => child.id !== movingId).map((child) => moveFrom(child)),
+          movedNode,
+        ],
+      };
+    }
+
+    return {
+      ...node,
+      children: node.children
+        .filter((child) => child.id !== movingId)
+        .map((child) => moveFrom(child)),
+    };
+  }
+
+  return moveFrom(root);
+}
+
+function relevelSubtree(node: MindNode, level: number): MindNode {
+  return {
+    ...node,
+    level,
+    children: node.children.map((child) => relevelSubtree(child, Math.min(level + 1, 6))),
+  };
+}
+
 export function findNode(root: MindNode, nodeId: string): MindNode | undefined {
   if (root.id === nodeId) {
     return root;

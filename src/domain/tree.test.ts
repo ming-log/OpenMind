@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MindNode } from "./types";
-import { addChildNode, addSiblingNode, deleteNode, deleteNodes, updateNodeNote, updateNodeTitle } from "./tree";
+import { addChildNode, addSiblingNode, deleteNode, deleteNodes, moveSubtree, updateNodeNote, updateNodeTitle } from "./tree";
 
 function fixture(): MindNode {
   return {
@@ -84,5 +84,32 @@ describe("tree editing helpers", () => {
     expect(removed.id).toBe("root");
     expect(removed.children.map((node) => node.id)).toEqual(["a"]);
     expect(removed.children[0].children).toEqual([]);
+  });
+
+  it("moves a node and all descendants below a new parent while recalculating levels", () => {
+    const moved = moveSubtree(fixture(), "a", "b");
+
+    expect(moved.children.map((node) => node.id)).toEqual(["b"]);
+    expect(moved.children[0].children.map((node) => node.id)).toEqual(["a"]);
+    expect(moved.children[0].children[0]).toMatchObject({
+      id: "a",
+      level: 3,
+      children: [
+        {
+          id: "a1",
+          level: 4,
+        },
+      ],
+    });
+  });
+
+  it("ignores impossible subtree moves", () => {
+    const original = fixture();
+
+    expect(moveSubtree(original, "root", "a")).toBe(original);
+    expect(moveSubtree(original, "a", "a")).toBe(original);
+    expect(moveSubtree(original, "a", "a1")).toBe(original);
+    expect(moveSubtree(original, "missing", "b")).toBe(original);
+    expect(moveSubtree(original, "a", "missing")).toBe(original);
   });
 });

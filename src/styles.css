@@ -195,6 +195,20 @@ button:disabled {
   background: #fffdf8;
   box-shadow: 0 10px 24px rgba(38, 60, 53, 0.12);
   cursor: pointer;
+  transition: box-shadow 120ms ease, outline-color 120ms ease;
+  user-select: none;
+}
+
+.mind-node.dragging {
+  z-index: 4;
+  cursor: grabbing;
+  opacity: 0.92;
+  box-shadow: 0 18px 38px rgba(38, 60, 53, 0.24);
+}
+
+.mind-node.drop-target {
+  outline: 3px solid rgba(37, 92, 74, 0.7);
+  outline-offset: 5px;
 }
 
 .mind-node.level-1 {
