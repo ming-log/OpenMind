@@ -130,8 +130,8 @@ export default function App() {
     setMessage(removableIds.length === 1 ? "已删除节点" : `已删除 ${removableIds.length} 个节点`);
   }
 
-  function moveNode(nodeId: string, newParentId: string): void {
-    const nextRoot = moveSubtree(documentState.root, nodeId, newParentId);
+  function moveNode(nodeId: string, newParentId: string, index: number): void {
+    const nextRoot = moveSubtree(documentState.root, nodeId, newParentId, index);
     if (nextRoot === documentState.root) {
       return;
     }

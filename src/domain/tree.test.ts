@@ -87,7 +87,7 @@ describe("tree editing helpers", () => {
   });
 
   it("moves a node and all descendants below a new parent while recalculating levels", () => {
-    const moved = moveSubtree(fixture(), "a", "b");
+    const moved = moveSubtree(fixture(), "a", "b", 0);
 
     expect(moved.children.map((node) => node.id)).toEqual(["b"]);
     expect(moved.children[0].children.map((node) => node.id)).toEqual(["a"]);
@@ -103,13 +103,38 @@ describe("tree editing helpers", () => {
     });
   });
 
+  it("moves a node to a requested sibling position", () => {
+    const moved = moveSubtree(fixture(), "b", "root", 0);
+
+    expect(moved.children.map((node) => node.id)).toEqual(["b", "a"]);
+    expect(moved.children[0].level).toBe(2);
+    expect(moved.children[1].children.map((node) => node.id)).toEqual(["a1"]);
+  });
+
+  it("keeps same-parent insertion indexes stable after removing the moved node", () => {
+    const movedBeforeOriginalNextSibling = moveSubtree(fixture(), "a", "root", 1);
+    const movedAfterOriginalPreviousSibling = moveSubtree(fixture(), "b", "root", 1);
+
+    expect(movedBeforeOriginalNextSibling.children.map((node) => node.id)).toEqual(["a", "b"]);
+    expect(movedAfterOriginalPreviousSibling.children.map((node) => node.id)).toEqual(["a", "b"]);
+  });
+
+  it("inserts a moved node at a requested child position", () => {
+    const moved = moveSubtree(fixture(), "b", "a", 0);
+
+    expect(moved.children.map((node) => node.id)).toEqual(["a"]);
+    expect(moved.children[0].children.map((node) => node.id)).toEqual(["b", "a1"]);
+    expect(moved.children[0].children[0].level).toBe(3);
+    expect(moved.children[0].children[1].level).toBe(3);
+  });
+
   it("ignores impossible subtree moves", () => {
     const original = fixture();
 
-    expect(moveSubtree(original, "root", "a")).toBe(original);
-    expect(moveSubtree(original, "a", "a")).toBe(original);
-    expect(moveSubtree(original, "a", "a1")).toBe(original);
-    expect(moveSubtree(original, "missing", "b")).toBe(original);
-    expect(moveSubtree(original, "a", "missing")).toBe(original);
+    expect(moveSubtree(original, "root", "a", 0)).toBe(original);
+    expect(moveSubtree(original, "a", "a", 0)).toBe(original);
+    expect(moveSubtree(original, "a", "a1", 0)).toBe(original);
+    expect(moveSubtree(original, "missing", "b", 0)).toBe(original);
+    expect(moveSubtree(original, "a", "missing", 0)).toBe(original);
   });
 });
