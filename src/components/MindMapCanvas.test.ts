@@ -19,4 +19,16 @@ describe("mind map node dialogs", () => {
     expect(canvasSource).toContain("note-drawer");
     expect(canvasSource).not.toContain("编辑标题\" : \"编辑批注");
   });
+
+  it("supports clearing multi-selection and deleting group frames from the canvas", () => {
+    expect(canvasSource).toContain("onClearSelection");
+    expect(canvasSource).toContain("group-frame-delete");
+    expect(canvasSource).toContain("onDeleteGroupFrame");
+  });
+
+  it("supports document undo through Ctrl+Z", () => {
+    expect(appSource).toContain("undoStacksRef");
+    expect(appSource).toContain("undoLastChange");
+    expect(appSource).toContain('event.key.toLowerCase() === "z"');
+  });
 });

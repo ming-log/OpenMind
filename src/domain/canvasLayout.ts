@@ -29,6 +29,13 @@ export interface DropIntent {
   index: number;
   placement: "before" | "after" | "inside";
   targetId: string;
+  side?: "left" | "right";
+}
+
+export interface FitCanvasSize extends CanvasSize {
+  minScale: number;
+  maxScale: number;
+  margin: number;
 }
 
 export function calculateCenteredPan(size: CanvasSize): { x: number; y: number } {
@@ -52,12 +59,13 @@ export function findDropIntent(point: DropPoint, rects: DropNodeRect[], excluded
   const eligibleRects = rects.filter((rect) => !excludedIds.has(rect.id));
   const containing = eligibleRects.find((rect) => containsPoint(point, rect));
   if (containing) {
-    if (point.x >= containing.left + containing.width * 0.75) {
+    if (point.x >= containing.left + containing.width * 0.75 || point.x <= containing.left + containing.width * 0.25) {
       return {
         parentId: containing.id,
         index: childCount(containing.id, rects),
         placement: "inside",
         targetId: containing.id,
+        side: point.x < containing.left + containing.width / 2 ? "left" : "right",
       };
     }
 
@@ -70,8 +78,8 @@ export function findDropIntent(point: DropPoint, rects: DropNodeRect[], excluded
   }
 
   const laneParent = eligibleRects.find((rect) => (
-    point.x > rect.left + rect.width
-    && point.x <= rect.left + rect.width + 80
+    ((point.x > rect.left + rect.width && point.x <= rect.left + rect.width + 80)
+      || (point.x < rect.left && point.x >= rect.left - 80))
     && point.y >= rect.top
     && point.y <= rect.top + rect.height
   ));
@@ -84,7 +92,15 @@ export function findDropIntent(point: DropPoint, rects: DropNodeRect[], excluded
     index: childCount(laneParent.id, rects),
     placement: "inside",
     targetId: laneParent.id,
+    side: point.x < laneParent.left ? "left" : "right",
   };
+}
+
+export function calculateFitScale(size: FitCanvasSize): number {
+  const availableWidth = Math.max(1, size.viewportWidth - size.margin * 2);
+  const availableHeight = Math.max(1, size.viewportHeight - size.margin * 2);
+  const fitScale = Math.min(availableWidth / size.contentWidth, availableHeight / size.contentHeight);
+  return Math.min(size.maxScale, Math.max(size.minScale, fitScale));
 }
 
 function containsPoint(point: DropPoint, rect: NodeRect): boolean {

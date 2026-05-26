@@ -7,6 +7,8 @@ interface HeadingToken {
   body: string[];
 }
 
+const SIDE_MARKER_PATTERN = /^<!--\s*openmind:side=(left|right)\s*-->\s*$/;
+
 function titleFromFileName(fileName: string): string {
   return fileName.replace(/\.[^.]+$/, "").trim() || "OpenMind";
 }
@@ -16,11 +18,20 @@ function normalizeNote(lines: string[]): string {
 }
 
 function headingToNode(token: HeadingToken, index: number): MindNode {
+  const sideMarkerIndex = token.body.findIndex((line) => SIDE_MARKER_PATTERN.test(line.trim()));
+  const side = sideMarkerIndex >= 0
+    ? SIDE_MARKER_PATTERN.exec(token.body[sideMarkerIndex].trim())?.[1] as MindNode["side"]
+    : undefined;
+  const noteLines = sideMarkerIndex >= 0
+    ? token.body.filter((_, lineIndex) => lineIndex !== sideMarkerIndex)
+    : token.body;
+
   return {
     id: createStableTestId("md", index),
     title: token.title || "Untitled",
-    note: normalizeNote(token.body),
+    note: normalizeNote(noteLines),
     level: token.level,
+    side,
     children: [],
   };
 }
@@ -39,9 +50,11 @@ export function createDefaultDocument(title = "OpenMind"): DocumentState {
   const root = createDefaultRoot(title);
   const markdown = serializeMarkdown(root);
   return {
+    id: createNodeId("task"),
     fileName: `${title || "openmind"}.md`,
     markdown,
     root,
+    groupFrames: [],
     localModifiedAt: new Date().toISOString(),
     lastSavedMarkdown: markdown,
     saveStatus: "saved",
@@ -108,6 +121,9 @@ export function serializeMarkdown(root: MindNode): string {
   function visit(node: MindNode): void {
     const level = Math.min(Math.max(node.level, 1), 6);
     lines.push(`${"#".repeat(level)} ${node.title.trim() || "Untitled"}`, "");
+    if (node.side) {
+      lines.push(`<!-- openmind:side=${node.side} -->`, "");
+    }
     const note = node.note.trim();
     if (note) {
       lines.push(note, "");

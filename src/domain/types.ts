@@ -5,7 +5,14 @@ export interface MindNode {
   title: string;
   note: string;
   level: number;
+  side?: "left" | "right";
   children: MindNode[];
+}
+
+export interface GroupFrame {
+  id: string;
+  nodeIds: string[];
+  note: string;
 }
 
 export interface ParseResult {
@@ -14,9 +21,11 @@ export interface ParseResult {
 }
 
 export interface DocumentState {
+  id?: string;
   fileName: string;
   markdown: string;
   root: MindNode;
+  groupFrames?: GroupFrame[];
   localModifiedAt: string;
   lastSavedMarkdown: string;
   lastSyncedAt?: string;
@@ -43,6 +52,8 @@ export interface WebDavConfig {
 
 export interface PersistedState {
   document: DocumentState;
+  documents?: DocumentState[];
+  activeDocumentId?: string;
   backups: BackupEntry[];
   webDavConfig: WebDavConfig;
 }

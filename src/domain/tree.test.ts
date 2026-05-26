@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MindNode } from "./types";
-import { addChildNode, addSiblingNode, deleteNode, deleteNodes, moveSubtree, updateNodeNote, updateNodeTitle } from "./tree";
+import { addChildNode, addSiblingNode, collectSubtreeIds, deleteNode, deleteNodes, moveSubtree, updateNodeNote, updateNodeTitle } from "./tree";
 
 function fixture(): MindNode {
   return {
@@ -136,5 +136,9 @@ describe("tree editing helpers", () => {
     expect(moveSubtree(original, "a", "a1", 0)).toBe(original);
     expect(moveSubtree(original, "missing", "b", 0)).toBe(original);
     expect(moveSubtree(original, "a", "missing", 0)).toBe(original);
+  });
+
+  it("collects selected nodes and all of their descendants for group frames", () => {
+    expect(collectSubtreeIds(fixture(), ["a", "b"]).sort()).toEqual(["a", "a1", "b"]);
   });
 });

@@ -25,4 +25,20 @@ describe("parseNoteMarkdown", () => {
       },
     ]);
   });
+
+  it("renders fenced code blocks and markdown images as structured blocks", () => {
+    expect(parseNoteMarkdown("![Diagram](https://example.com/a.png)\n\n```ts\nconst value = 1;\n```")).toEqual([
+      {
+        type: "paragraph",
+        children: [
+          { type: "image", alt: "Diagram", src: "https://example.com/a.png" },
+        ],
+      },
+      {
+        type: "codeBlock",
+        language: "ts",
+        code: "const value = 1;",
+      },
+    ]);
+  });
 });

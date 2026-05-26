@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateCenteredPan, findDropIntent, findDropTarget } from "./canvasLayout";
+import { calculateCenteredPan, calculateFitScale, findDropIntent, findDropTarget } from "./canvasLayout";
 
 describe("canvas layout helpers", () => {
   it("centers the tree bounds inside the viewport at the current scale", () => {
@@ -63,12 +63,59 @@ describe("canvas layout helpers", () => {
       index: 1,
       placement: "inside",
       targetId: "a",
+      side: "right",
     });
     expect(findDropIntent({ x: 145, y: 92 }, rects, new Set(["dragged"]))).toEqual({
       parentId: "a",
       index: 1,
       placement: "inside",
       targetId: "a",
+      side: "right",
+    });
+  });
+
+  it("calculates a bounded scale that fits the whole map inside the viewport", () => {
+    expect(calculateFitScale({
+      viewportWidth: 1000,
+      viewportHeight: 700,
+      contentWidth: 2000,
+      contentHeight: 600,
+      scale: 1,
+      minScale: 0.35,
+      maxScale: 1.8,
+      margin: 40,
+    })).toBe(0.46);
+
+    expect(calculateFitScale({
+      viewportWidth: 1200,
+      viewportHeight: 900,
+      contentWidth: 200,
+      contentHeight: 160,
+      scale: 1,
+      minScale: 0.35,
+      maxScale: 1.8,
+      margin: 40,
+    })).toBe(1.8);
+  });
+
+  it("returns child drop intents on the left side of a node or its child lane", () => {
+    const rects = [
+      { id: "root", parentId: "root", index: 0, left: 120, top: 40, width: 100, height: 60 },
+    ];
+
+    expect(findDropIntent({ x: 130, y: 65 }, rects, new Set(["dragged"]))).toEqual({
+      parentId: "root",
+      index: 1,
+      placement: "inside",
+      targetId: "root",
+      side: "left",
+    });
+    expect(findDropIntent({ x: 75, y: 92 }, rects, new Set(["dragged"]))).toEqual({
+      parentId: "root",
+      index: 1,
+      placement: "inside",
+      targetId: "root",
+      side: "left",
     });
   });
 });

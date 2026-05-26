@@ -44,8 +44,11 @@ function decodeSecret(value?: string): string {
 }
 
 export function loadPersistedState(storage: StorageAdapter = window.localStorage): PersistedState {
+  const defaultDocument = createDefaultDocument("OpenMind");
   const fallback: PersistedState = {
-    document: createDefaultDocument("OpenMind"),
+    document: defaultDocument,
+    documents: [defaultDocument],
+    activeDocumentId: defaultDocument.id,
     backups: [],
     webDavConfig: createEmptyWebDavConfig(),
   };
@@ -61,8 +64,17 @@ export function loadPersistedState(storage: StorageAdapter = window.localStorage
       ...createEmptyWebDavConfig(),
       ...(parsed.webDavConfig ?? {}),
     };
+    const document = parsed.document ?? fallback.document;
+    const documents = (parsed.documents?.length ? parsed.documents : [document]).map((entry, index) => ({
+      ...entry,
+      id: entry.id ?? `task-${index + 1}`,
+      groupFrames: entry.groupFrames ?? [],
+    }));
+    const activeDocumentId = parsed.activeDocumentId ?? document.id ?? documents[0]?.id;
     return {
-      document: parsed.document ?? fallback.document,
+      document: documents.find((entry) => entry.id === activeDocumentId) ?? documents[0] ?? document,
+      documents,
+      activeDocumentId,
       backups: parsed.backups ?? [],
       webDavConfig: {
         ...webDavConfig,
@@ -82,6 +94,7 @@ export function savePersistedState(storage: StorageAdapter = window.localStorage
     STORAGE_KEY,
     JSON.stringify({
       ...state,
+      document: state.documents?.find((entry) => entry.id === state.activeDocumentId) ?? state.document,
       webDavConfig: config,
     }),
   );

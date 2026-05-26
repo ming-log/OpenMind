@@ -103,4 +103,26 @@ Child note.
 `);
     expect(serializeMarkdown(document.root)).not.toContain("runtime-child");
   });
+
+  it("persists OpenMind side metadata through Markdown without adding it to notes", () => {
+    const document = createDefaultDocument("Root");
+    document.root.children.push({
+      id: "left-child",
+      title: "Left child",
+      note: "Visible note.",
+      level: 2,
+      side: "left",
+      children: [],
+    });
+
+    const markdown = serializeMarkdown(document.root);
+    const parsed = parseMarkdown(markdown, "Root.md");
+
+    expect(markdown).toContain("<!-- openmind:side=left -->");
+    expect(parsed.root.children[0]).toMatchObject({
+      title: "Left child",
+      side: "left",
+      note: "Visible note.",
+    });
+  });
 });

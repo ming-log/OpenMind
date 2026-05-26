@@ -2,13 +2,15 @@ import { createNodeId } from "./ids";
 import type { MindNode } from "./types";
 
 type NodeUpdater = (node: MindNode) => MindNode;
+type NodeSide = NonNullable<MindNode["side"]>;
 
-function createEmptyNode(level: number, title: string, nodeId = createNodeId("node")): MindNode {
+function createEmptyNode(level: number, title: string, nodeId = createNodeId("node"), side?: NodeSide): MindNode {
   return {
     id: nodeId,
     title,
     note: "",
     level,
+    side,
     children: [],
   };
 }
@@ -24,12 +26,12 @@ function mapNode(node: MindNode, targetId: string, updater: NodeUpdater): MindNo
   };
 }
 
-export function addChildNode(root: MindNode, parentId: string, title = "New node", nodeId?: string): MindNode {
+export function addChildNode(root: MindNode, parentId: string, title = "New node", nodeId?: string, side?: NodeSide): MindNode {
   return mapNode(root, parentId, (node) => ({
     ...node,
     children: [
       ...node.children,
-      createEmptyNode(Math.min(node.level + 1, 6), title, nodeId),
+      createEmptyNode(Math.min(node.level + 1, 6), title, nodeId, node.id === root.id ? side ?? "right" : node.side),
     ],
   }));
 }
@@ -43,7 +45,7 @@ export function addSiblingNode(root: MindNode, targetId: string, title = "New no
     const children = node.children.flatMap((child) => {
       const nextChild = insertBelow(child);
       if (child.id === targetId) {
-        return [nextChild, createEmptyNode(child.level, title, nodeId)];
+        return [nextChild, createEmptyNode(child.level, title, nodeId, child.side)];
       }
       return [nextChild];
     });
@@ -106,7 +108,7 @@ export function deleteNodes(root: MindNode, nodeIds: string[]): MindNode {
   return removeFrom(root);
 }
 
-export function moveSubtree(root: MindNode, movingId: string, newParentId: string, insertionIndex = Number.MAX_SAFE_INTEGER): MindNode {
+export function moveSubtree(root: MindNode, movingId: string, newParentId: string, insertionIndex = Number.MAX_SAFE_INTEGER, side?: NodeSide): MindNode {
   if (movingId === root.id || movingId === newParentId) {
     return root;
   }
@@ -117,7 +119,8 @@ export function moveSubtree(root: MindNode, movingId: string, newParentId: strin
     return root;
   }
 
-  const movedNode = relevelSubtree(movingNode, Math.min(newParent.level + 1, 6));
+  const movedSide = newParent.id === root.id ? side ?? movingNode.side ?? "right" : newParent.side;
+  const movedNode = relevelSubtree(movingNode, Math.min(newParent.level + 1, 6), movedSide);
   const withoutMovingNode = removeSubtree(root, movingId);
   const movingLocation = findParentLocation(root, movingId);
   const targetIndex = movingLocation?.parentId === newParentId && movingLocation.index < insertionIndex
@@ -170,11 +173,12 @@ function findParentLocation(root: MindNode, nodeId: string): { parentId: string;
   return undefined;
 }
 
-function relevelSubtree(node: MindNode, level: number): MindNode {
+function relevelSubtree(node: MindNode, level: number, side?: NodeSide): MindNode {
   return {
     ...node,
     level,
-    children: node.children.map((child) => relevelSubtree(child, Math.min(level + 1, 6))),
+    side,
+    children: node.children.map((child) => relevelSubtree(child, Math.min(level + 1, 6), side)),
   };
 }
 
@@ -189,4 +193,22 @@ export function findNode(root: MindNode, nodeId: string): MindNode | undefined {
     }
   }
   return undefined;
+}
+
+export function collectSubtreeIds(root: MindNode, nodeIds: string[]): string[] {
+  const ids = new Set<string>();
+
+  function collect(node: MindNode): void {
+    ids.add(node.id);
+    node.children.forEach(collect);
+  }
+
+  nodeIds.forEach((nodeId) => {
+    const node = findNode(root, nodeId);
+    if (node) {
+      collect(node);
+    }
+  });
+
+  return Array.from(ids);
 }

@@ -6,11 +6,26 @@ interface NoteBubbleProps {
 }
 
 export function NoteBubble({ note, pinned = false }: NoteBubbleProps) {
+  return (
+    <div className={`note-bubble ${pinned ? "pinned" : "hover"}`}>
+      <NoteMarkdownContent note={note} />
+    </div>
+  );
+}
+
+export function NoteMarkdownContent({ note }: { note: string }) {
   const blocks = parseNoteMarkdown(note);
 
   return (
-    <div className={`note-bubble ${pinned ? "pinned" : "hover"}`}>
+    <>
       {blocks.map((block, index) => {
+        if (block.type === "codeBlock") {
+          return (
+            <pre className="note-code-block" key={index}>
+              <code>{block.code}</code>
+            </pre>
+          );
+        }
         if (block.type === "list") {
           return (
             <ul key={index}>
@@ -22,7 +37,7 @@ export function NoteBubble({ note, pinned = false }: NoteBubbleProps) {
         }
         return <p key={index}>{renderInline(block.children)}</p>;
       })}
-    </div>
+    </>
   );
 }
 
@@ -36,6 +51,9 @@ function renderInline(tokens: InlineToken[]) {
     }
     if (token.type === "code") {
       return <code key={index}>{token.text}</code>;
+    }
+    if (token.type === "image") {
+      return <img alt={token.alt} className="note-image" key={index} src={token.src} />;
     }
     return token.text;
   });

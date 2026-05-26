@@ -1,27 +1,34 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { calculateCenteredPan, findDropIntent, type DropIntent, type DropNodeRect } from "../domain/canvasLayout";
+import { calculateCenteredPan, calculateFitScale, findDropIntent, type DropIntent, type DropNodeRect } from "../domain/canvasLayout";
 import { layoutTree } from "../domain/pngExport";
 import { getIntersectingNodeIds, normalizeSelectionBox, type SelectableNodeRect, type SelectionBox } from "../domain/selection";
-import type { MindNode } from "../domain/types";
-import { NoteBubble } from "./NoteBubble";
+import type { GroupFrame, MindNode } from "../domain/types";
+import { NoteBubble, NoteMarkdownContent } from "./NoteBubble";
 
 interface MindMapCanvasProps {
   root: MindNode;
+  groupFrames: GroupFrame[];
   selectedId?: string;
   selectedIds: string[];
   onSelect: (nodeId: string) => void;
   onSelectMany: (nodeIds: string[]) => void;
-  onAddChild: (nodeId: string) => void;
+  onClearSelection: () => void;
+  onAddChild: (nodeId: string, side?: "left" | "right") => void;
   onAddSibling: (nodeId: string) => void;
   onEditTitle: (nodeId: string, title: string) => void;
   onEditNote: (nodeId: string, note: string) => void;
   onDeleteSelection: (nodeIds: string[]) => void;
-  onMoveSubtree: (nodeId: string, newParentId: string, index: number) => void;
+  onMoveSubtree: (nodeId: string, newParentId: string, index: number, side?: "left" | "right") => void;
+  onCreateGroupFrame: (nodeIds: string[]) => void;
+  onUpdateGroupFrameNote: (frameId: string, note: string) => void;
+  onDeleteGroupFrame: (frameId: string) => void;
 }
 
 const NODE_WIDTH = 180;
 const NODE_HEIGHT = 54;
 const PADDING = 160;
+const MIN_SCALE = 0.1;
+const MAX_SCALE = 1.8;
 
 type DeleteTarget = {
   nodeIds: string[];
@@ -44,6 +51,12 @@ type TitleEditor = {
 
 type NoteDrawer = {
   node: MindNode;
+  value: string;
+  mode: "read" | "edit";
+};
+
+type FrameEditor = {
+  frameId: string;
   value: string;
 };
 
@@ -76,6 +89,7 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
   const [pinnedNoteId, setPinnedNoteId] = useState<string | null>(null);
   const [titleEditor, setTitleEditor] = useState<TitleEditor | null>(null);
   const [noteDrawer, setNoteDrawer] = useState<NoteDrawer | null>(null);
+  const [frameEditor, setFrameEditor] = useState<FrameEditor | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const noteInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -103,9 +117,13 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
   const nodeDragOffset = nodeDrag ? { x: nodeDrag.deltaX / scale, y: nodeDrag.deltaY / scale } : { x: 0, y: 0 };
 
   useEffect(() => {
-    if (!noteDrawer) return;
+    if (!noteDrawer || noteDrawer.mode !== "edit") return;
     noteInputRef.current?.focus();
   }, [noteDrawer]);
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => focusNode(props.root.id, 1));
+  }, [props.root.id]);
 
   useEffect(() => {
     if (!pendingCenterRef.current) {
@@ -130,7 +148,7 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
   }
 
   function openNoteDrawer(node: MindNode): void {
-    setNoteDrawer({ node, value: node.note });
+    setNoteDrawer({ node, value: node.note, mode: "read" });
     setDeleteTarget(null);
     setMenu(null);
   }
@@ -238,12 +256,30 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
     const intent = findDropIntent(getViewportPointFromClient(clientX, clientY), getDropNodeRects(), excludedIds);
     if (intent) {
       pendingCenterRef.current = true;
-      props.onMoveSubtree(drag.nodeId, intent.parentId, intent.index);
+      props.onMoveSubtree(drag.nodeId, intent.parentId, intent.index, intent.side);
     } else {
       centerMap();
     }
     setNodeDrag(null);
   }
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    function wheel(event: WheelEvent): void {
+      if (!event.ctrlKey) {
+        return;
+      }
+      event.preventDefault();
+      setScale((value) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, value - event.deltaY * 0.001)));
+    }
+
+    viewport.addEventListener("wheel", wheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", wheel);
+  }, []);
 
   useEffect(() => {
     if (!nodeDrag) {
@@ -277,7 +313,8 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
 
   useEffect(() => {
     function keydown(event: KeyboardEvent): void {
-      if (titleEditor || noteDrawer || deleteTarget || menu) {
+      const overlayOpen = titleEditor || noteDrawer || deleteTarget || menu || frameEditor;
+      if (overlayOpen) {
         return;
       }
 
@@ -355,7 +392,7 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
       window.removeEventListener("keyup", keyup);
       window.removeEventListener("blur", blur);
     };
-  }, [byId, deleteTarget, menu, noteDrawer, props, titleEditor]);
+  }, [byId, deleteTarget, frameEditor, menu, noteDrawer, props, titleEditor]);
 
   const normalizedSelection = selectionBox ? normalizeSelectionBox(selectionBox) : null;
   const activeDropIntent = nodeDrag
@@ -369,8 +406,9 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
     }
 
     if (intent.placement === "inside") {
+      const leftSide = intent.side === "left";
       return {
-        left: PADDING + target.x + NODE_WIDTH + 26,
+        left: PADDING + target.x + (leftSide ? -100 : NODE_WIDTH + 26),
         top: PADDING + target.y + NODE_HEIGHT / 2 - 2,
         width: 74,
       };
@@ -380,6 +418,71 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
       left: PADDING + target.x - 8,
       top: PADDING + target.y + (intent.placement === "before" ? -8 : NODE_HEIGHT + 6),
       width: NODE_WIDTH + 16,
+    };
+  }
+
+  function fitAndCenterMap(): void {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+
+    const nextScale = calculateFitScale({
+      viewportWidth: rect.width,
+      viewportHeight: rect.height,
+      contentWidth: width,
+      contentHeight: height,
+      scale,
+      minScale: MIN_SCALE,
+      maxScale: MAX_SCALE,
+      margin: 40,
+    });
+    setScale(nextScale);
+    setPan(calculateCenteredPan({
+      viewportWidth: rect.width,
+      viewportHeight: rect.height,
+      contentWidth: width,
+      contentHeight: height,
+      scale: nextScale,
+    }));
+  }
+
+  function focusNode(nodeId: string, nextScale = scale): void {
+    const selected = byId.get(nodeId);
+    if (!selected) {
+      return;
+    }
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+
+    const targetX = rect.width / 2 - (NODE_WIDTH * nextScale) / 2;
+    const targetY = rect.height / 2 - (NODE_HEIGHT * nextScale) / 2;
+    setScale(nextScale);
+    setPan({
+      x: targetX - (PADDING + selected.x) * nextScale,
+      y: targetY - (PADDING + selected.y) * nextScale,
+    });
+  }
+
+  function getFrameStyle(frame: GroupFrame): CSSProperties | undefined {
+    const entries = frame.nodeIds
+      .map((nodeId) => byId.get(nodeId))
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+    if (entries.length < 2) {
+      return undefined;
+    }
+
+    const left = Math.min(...entries.map((entry) => PADDING + entry.x));
+    const top = Math.min(...entries.map((entry) => PADDING + entry.y));
+    const right = Math.max(...entries.map((entry) => PADDING + entry.x + NODE_WIDTH));
+    const bottom = Math.max(...entries.map((entry) => PADDING + entry.y + NODE_HEIGHT));
+    return {
+      left: left - 24,
+      top: top - 28,
+      width: right - left + 48,
+      height: bottom - top + 56,
     };
   }
 
@@ -420,34 +523,41 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
         suppressClickRef.current = false;
       }}
       onWheel={(event) => {
-        event.preventDefault();
-        setScale((value) => Math.min(1.8, Math.max(0.35, value - event.deltaY * 0.001)));
+        if (event.ctrlKey) {
+          event.preventDefault();
+          setScale((value) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, value - event.deltaY * 0.001)));
+        }
       }}
     >
       <div className="canvas-controls">
-        <button onClick={() => setScale((value) => Math.max(0.35, value - 0.1))}>−</button>
+        <button onClick={() => setScale((value) => Math.max(MIN_SCALE, value - 0.1))}>−</button>
         <span>{Math.round(scale * 100)}%</span>
-        <button onClick={() => setScale((value) => Math.min(1.8, value + 0.1))}>＋</button>
+        <button onClick={() => setScale((value) => Math.min(MAX_SCALE, value + 0.1))}>＋</button>
         <button
           onClick={() => {
-            setScale(1);
-            centerMap(1);
+            fitAndCenterMap();
           }}
           title="自动排版并居中"
         >
           ⌂
         </button>
-        <button
+          <button
           onClick={() => {
             const selected = props.selectedId ? byId.get(props.selectedId) : byId.get(props.root.id);
             if (selected) {
-              setPan({ x: 220 - PADDING - selected.x * scale, y: 220 - PADDING - selected.y * scale });
+              const nextScale = Math.max(scale, 1);
+              focusNode(selected.node.id, nextScale);
             }
           }}
           title="聚焦选中节点"
         >
           ⌖
         </button>
+        {props.selectedIds.length > 0 ? (
+          <button onClick={() => props.onCreateGroupFrame(props.selectedIds)} title="为选中节点添加外框">
+            □
+          </button>
+        ) : null}
       </div>
       <div
         ref={viewportRef}
@@ -473,6 +583,10 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
           }
           if (event.target === event.currentTarget) {
             setMenu(null);
+            if (props.selectedIds.length > 1) {
+              props.onClearSelection();
+              return;
+            }
             setDragStart({ x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y });
           }
         }}
@@ -490,6 +604,11 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
         ) : null}
         <div
           className="map-stage"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && props.selectedIds.length > 1) {
+              props.onClearSelection();
+            }
+          }}
           style={{
             width,
             height,
@@ -503,9 +622,10 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
                 if (!childEntry) return null;
                 const parentDragged = draggedIds.has(entry.node.id);
                 const childDragged = draggedIds.has(child.id);
-                const startX = PADDING + entry.x + NODE_WIDTH + (parentDragged ? nodeDragOffset.x : 0);
+                const childIsLeft = childEntry.x < entry.x;
+                const startX = PADDING + entry.x + (childIsLeft ? 0 : NODE_WIDTH) + (parentDragged ? nodeDragOffset.x : 0);
                 const startY = PADDING + entry.y + NODE_HEIGHT / 2 + (parentDragged ? nodeDragOffset.y : 0);
-                const endX = PADDING + childEntry.x + (childDragged ? nodeDragOffset.x : 0);
+                const endX = PADDING + childEntry.x + (childIsLeft ? NODE_WIDTH : 0) + (childDragged ? nodeDragOffset.x : 0);
                 const endY = PADDING + childEntry.y + NODE_HEIGHT / 2 + (childDragged ? nodeDragOffset.y : 0);
                 const midX = (startX + endX) / 2;
                 return (
@@ -523,6 +643,36 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
               style={getDropPreviewStyle(activeDropIntent)}
             />
           ) : null}
+          {props.groupFrames.map((frame) => {
+            const style = getFrameStyle(frame);
+            if (!style) return null;
+            return (
+              <div className="group-frame" key={frame.id} style={style}>
+                <button
+                   className="group-frame-note"
+                   onClick={(event) => {
+                     event.stopPropagation();
+                     setFrameEditor({ frameId: frame.id, value: frame.note });
+                   }}
+                   type="button"
+                >
+                  {frame.note || "备注"}
+                </button>
+                <button
+                  aria-label="删除外框"
+                  className="group-frame-delete"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    props.onDeleteGroupFrame(frame.id);
+                  }}
+                  title="删除外框"
+                  type="button"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
           {nodes.map((entry) => (
             <article
               className={`mind-node level-${entry.node.level} ${selectedSet.has(entry.node.id) ? "selected" : ""} ${props.selectedIds.length > 1 && selectedSet.has(entry.node.id) ? "multi-selected" : ""} ${draggedIds.has(entry.node.id) ? "dragging" : ""} ${activeDropIntent?.targetId === entry.node.id ? "drop-target" : ""}`}
@@ -532,12 +682,21 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
                 top: PADDING + entry.y,
                 transform: draggedIds.has(entry.node.id) ? `translate(${nodeDragOffset.x}px, ${nodeDragOffset.y}px)` : undefined,
               }}
-              onClick={() => {
+              onClick={(event) => {
                 if (suppressClickRef.current) {
                   suppressClickRef.current = false;
                   return;
                 }
-                props.onSelect(entry.node.id);
+                if (props.selectedIds.length > 1 && !selectedSet.has(entry.node.id) && !event.ctrlKey && !isCtrlSelecting) {
+                  props.onClearSelection();
+                } else if (event.ctrlKey || isCtrlSelecting) {
+                  const next = selectedSet.has(entry.node.id)
+                    ? props.selectedIds.filter((nodeId) => nodeId !== entry.node.id)
+                    : [...props.selectedIds, entry.node.id];
+                  props.onSelectMany(next.length ? next : [entry.node.id]);
+                } else {
+                  props.onSelect(entry.node.id);
+                }
                 setPinnedNoteId((current) => (current === entry.node.id ? null : entry.node.id));
               }}
               onDoubleClick={(event) => {
@@ -545,7 +704,20 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
                 startTitleEdit(entry.node);
               }}
               onMouseDown={(event) => {
-                if (entry.node.id === props.root.id || event.button !== 0 || event.ctrlKey || isCtrlSelecting || isSpacePanning) {
+                if (event.button !== 0) {
+                  return;
+                }
+                if (props.selectedIds.length > 1 && !selectedSet.has(entry.node.id) && !event.ctrlKey && !isCtrlSelecting) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  props.onClearSelection();
+                  return;
+                }
+                if (event.ctrlKey || isCtrlSelecting) {
+                  event.stopPropagation();
+                  return;
+                }
+                if (isSpacePanning) {
                   return;
                 }
                 if (event.target instanceof HTMLElement && event.target.closest("button")) {
@@ -555,6 +727,11 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
                 event.preventDefault();
                 event.stopPropagation();
                 setMenu(null);
+                if (entry.node.id === props.root.id) {
+                  props.onSelect(entry.node.id);
+                  setDragStart({ x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y });
+                  return;
+                }
                 props.onSelect(entry.node.id);
                 setNodeDrag({
                   nodeId: entry.node.id,
@@ -578,11 +755,27 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
                     event.preventDefault();
                     return;
                   }
-                  props.onAddChild(entry.node.id);
+                  props.onAddChild(entry.node.id, "right");
                 }}
               >
                 ＋
               </button>
+              {entry.node.id === props.root.id ? (
+                <button
+                  className="node-add node-add-left"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (suppressClickRef.current) {
+                      event.preventDefault();
+                      return;
+                    }
+                    props.onAddChild(entry.node.id, "left");
+                  }}
+                  title="在左侧新增节点"
+                >
+                  ＋
+                </button>
+              ) : null}
               {titleEditor?.nodeId === entry.node.id ? (
                 <input
                   autoFocus
@@ -643,24 +836,87 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
               </div>
               <button aria-label="关闭" onClick={() => setNoteDrawer(null)} type="button">×</button>
             </header>
+            {noteDrawer.mode === "read" ? (
+              <div className="note-drawer-content">
+                {noteDrawer.value.trim() ? (
+                  <NoteMarkdownContent note={noteDrawer.value} />
+                ) : (
+                  <p className="empty-note">暂无批注</p>
+                )}
+              </div>
+            ) : (
+              <label className="node-dialog-field note-editor-field">
+                <span>节点批注</span>
+                <textarea
+                  ref={noteInputRef}
+                  value={noteDrawer.value}
+                  onChange={(event) => setNoteDrawer({ ...noteDrawer, value: event.target.value })}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setNoteDrawer(null);
+                  }}
+                />
+              </label>
+            )}
+            <footer>
+              {noteDrawer.mode === "read" ? (
+                <>
+                  <button type="button" onClick={() => setNoteDrawer(null)}>关闭</button>
+                  <button
+                    className="primary"
+                    type="button"
+                    onClick={() => setNoteDrawer({ ...noteDrawer, mode: "edit" })}
+                  >
+                    编辑
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={() => setNoteDrawer({ ...noteDrawer, mode: "read" })}>阅读</button>
+                  <button className="primary" type="submit">保存</button>
+                </>
+              )}
+            </footer>
+          </form>
+        </aside>
+      ) : null}
+      {frameEditor ? (
+        <div className="modal-backdrop node-dialog-backdrop" onMouseDown={() => setFrameEditor(null)}>
+          <form
+            aria-modal="true"
+            className="node-dialog"
+            onMouseDown={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault();
+              props.onUpdateGroupFrameNote(frameEditor.frameId, frameEditor.value);
+              setFrameEditor(null);
+            }}
+            role="dialog"
+          >
+            <header>
+              <div>
+                <span>外框备注</span>
+                <strong>编辑备注</strong>
+              </div>
+              <button aria-label="关闭" onClick={() => setFrameEditor(null)} type="button">×</button>
+            </header>
             <label className="node-dialog-field">
-              <span>节点批注</span>
+              <span>备注内容</span>
               <textarea
-                ref={noteInputRef}
-                rows={12}
-                value={noteDrawer.value}
-                onChange={(event) => setNoteDrawer({ ...noteDrawer, value: event.target.value })}
+                autoFocus
+                rows={4}
+                value={frameEditor.value}
+                onChange={(event) => setFrameEditor({ ...frameEditor, value: event.target.value })}
                 onKeyDown={(event) => {
-                  if (event.key === "Escape") setNoteDrawer(null);
+                  if (event.key === "Escape") setFrameEditor(null);
                 }}
               />
             </label>
             <footer>
-              <button type="button" onClick={() => setNoteDrawer(null)}>取消</button>
+              <button type="button" onClick={() => setFrameEditor(null)}>取消</button>
               <button className="primary" type="submit">保存</button>
             </footer>
           </form>
-        </aside>
+        </div>
       ) : null}
       {deleteTarget ? (
         <div className="modal-backdrop node-dialog-backdrop" onMouseDown={() => setDeleteTarget(null)}>

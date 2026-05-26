@@ -1,6 +1,6 @@
 import type { MindNode } from "./types";
 
-interface PositionedNode {
+export interface PositionedNode {
   node: MindNode;
   x: number;
   y: number;
@@ -13,25 +13,46 @@ const Y_GAP = 86;
 const PADDING = 80;
 
 export function layoutTree(root: MindNode): PositionedNode[] {
+  const right = layoutBranch(root.children.filter((child) => child.side !== "left"), 1);
+  const left = layoutBranch(root.children.filter((child) => child.side === "left"), -1);
+  const normalizedRight = right.map((entry) => ({ node: entry.node, x: entry.x, y: entry.y - right.anchorY }));
+  const normalizedLeft = left.map((entry) => ({ node: entry.node, x: entry.x, y: entry.y - left.anchorY }));
+  const minX = Math.min(0, ...normalizedRight.map((entry) => entry.x), ...normalizedLeft.map((entry) => entry.x));
+  const minY = Math.min(0, ...normalizedRight.map((entry) => entry.y), ...normalizedLeft.map((entry) => entry.y));
+
+  return [
+    { node: root, x: -minX, y: -minY },
+    ...normalizedRight.map((entry) => ({ node: entry.node, x: entry.x - minX, y: entry.y - minY })),
+    ...normalizedLeft.map((entry) => ({ node: entry.node, x: entry.x - minX, y: entry.y - minY })),
+  ];
+}
+
+function layoutBranch(children: MindNode[], direction: 1 | -1): PositionedNode[] & { height: number; anchorY: number } {
   const positioned: PositionedNode[] = [];
+  const anchors: number[] = [];
   let leafIndex = 0;
 
   function walk(node: MindNode, depth: number): number {
     if (node.children.length === 0) {
       const y = leafIndex * Y_GAP;
       leafIndex += 1;
-      positioned.push({ node, x: depth * X_GAP, y });
+      positioned.push({ node, x: direction * depth * X_GAP, y });
+      if (depth === 1) anchors.push(y);
       return y;
     }
 
     const childYs = node.children.map((child) => walk(child, depth + 1));
     const y = (childYs[0] + childYs[childYs.length - 1]) / 2;
-    positioned.push({ node, x: depth * X_GAP, y });
+    positioned.push({ node, x: direction * depth * X_GAP, y });
+    if (depth === 1) anchors.push(y);
     return y;
   }
 
-  walk(root, 0);
-  return positioned;
+  children.forEach((child) => walk(child, 1));
+  return Object.assign(positioned, {
+    height: Math.max(0, leafIndex - 1) * Y_GAP + NODE_HEIGHT,
+    anchorY: anchors.length ? anchors.reduce((sum, y) => sum + y, 0) / anchors.length : 0,
+  });
 }
 
 export function exportTreeAsPng(root: MindNode, fileName: string): void {
@@ -59,9 +80,10 @@ export function exportTreeAsPng(root: MindNode, fileName: string): void {
     for (const child of entry.node.children) {
       const childEntry = byId.get(child.id);
       if (!childEntry) continue;
-      const startX = PADDING + entry.x + NODE_WIDTH;
+      const childIsLeft = childEntry.x < entry.x;
+      const startX = PADDING + entry.x + (childIsLeft ? 0 : NODE_WIDTH);
       const startY = PADDING + entry.y + NODE_HEIGHT / 2;
-      const endX = PADDING + childEntry.x;
+      const endX = PADDING + childEntry.x + (childIsLeft ? NODE_WIDTH : 0);
       const endY = PADDING + childEntry.y + NODE_HEIGHT / 2;
       const midX = (startX + endX) / 2;
       context.beginPath();
@@ -82,7 +104,7 @@ export function exportTreeAsPng(root: MindNode, fileName: string): void {
     context.stroke();
     context.fillStyle = "#1f2d28";
     context.font = `${entry.node.level === 1 ? "700" : "600"} 15px Georgia, serif`;
-    wrapText(context, entry.node.title, x + 16, y + 22, NODE_WIDTH - 32, 18);
+    drawCenteredWrappedText(context, entry.node.title, x + 16, y, NODE_WIDTH - 32, NODE_HEIGHT, 18);
   }
 
   const link = document.createElement("a");
@@ -101,22 +123,26 @@ function roundRect(context: CanvasRenderingContext2D, x: number, y: number, widt
   context.closePath();
 }
 
-function wrapText(context: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number): void {
+function drawCenteredWrappedText(context: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, height: number, lineHeight: number): void {
   const words = text.split(/\s+/);
   let line = "";
-  let lineCount = 0;
+  const lines: string[] = [];
   for (const word of words) {
     const testLine = line ? `${line} ${word}` : word;
     if (context.measureText(testLine).width > maxWidth && line) {
-      context.fillText(line, x, y + lineCount * lineHeight);
+      lines.push(line);
       line = word;
-      lineCount += 1;
-      if (lineCount > 1) break;
+      if (lines.length > 1) break;
     } else {
       line = testLine;
     }
   }
-  if (line && lineCount <= 1) {
-    context.fillText(line, x, y + lineCount * lineHeight);
+  if (line && lines.length <= 1) {
+    lines.push(line);
   }
+  context.textBaseline = "middle";
+  const firstLineY = y + height / 2 - ((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((textLine, index) => {
+    context.fillText(textLine, x, firstLineY + index * lineHeight);
+  });
 }
