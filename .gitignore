@@ -5,3 +5,4 @@ dist/
 *.local
 npm-debug.log*
 *.log
+theme_UI_img/

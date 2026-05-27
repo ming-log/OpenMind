@@ -4,61 +4,152 @@ export interface PositionedNode {
   node: MindNode;
   x: number;
   y: number;
+  height: number;
 }
 
-const NODE_WIDTH = 180;
-const NODE_HEIGHT = 54;
+export const NODE_WIDTH = 180;
+export const MIN_NODE_HEIGHT = 54;
+export const ROOT_MIN_NODE_HEIGHT = 62;
 const X_GAP = 210;
-const Y_GAP = 86;
+const Y_GAP = 32;
 const PADDING = 80;
+export const EXPORT_FONT_FAMILY = '"Times New Roman", "Microsoft YaHei", serif';
+type TextMeasureContext = Pick<CanvasRenderingContext2D, "measureText">;
 
 export function layoutTree(root: MindNode): PositionedNode[] {
+  const rootHeight = calculateNodeHeight(root);
   const right = layoutBranch(root.children.filter((child) => child.side !== "left"), 1);
   const left = layoutBranch(root.children.filter((child) => child.side === "left"), -1);
-  const normalizedRight = right.map((entry) => ({ node: entry.node, x: entry.x, y: entry.y - right.anchorY }));
-  const normalizedLeft = left.map((entry) => ({ node: entry.node, x: entry.x, y: entry.y - left.anchorY }));
+  const normalizedRight = right.map((entry) => ({
+    node: entry.node,
+    x: entry.x,
+    y: entry.y - right.anchorY + rootHeight / 2,
+    height: entry.height,
+  }));
+  const normalizedLeft = left.map((entry) => ({
+    node: entry.node,
+    x: entry.x,
+    y: entry.y - left.anchorY + rootHeight / 2,
+    height: entry.height,
+  }));
   const minX = Math.min(0, ...normalizedRight.map((entry) => entry.x), ...normalizedLeft.map((entry) => entry.x));
   const minY = Math.min(0, ...normalizedRight.map((entry) => entry.y), ...normalizedLeft.map((entry) => entry.y));
 
   return [
-    { node: root, x: -minX, y: -minY },
-    ...normalizedRight.map((entry) => ({ node: entry.node, x: entry.x - minX, y: entry.y - minY })),
-    ...normalizedLeft.map((entry) => ({ node: entry.node, x: entry.x - minX, y: entry.y - minY })),
+    { node: root, x: -minX, y: -minY, height: rootHeight },
+    ...normalizedRight.map((entry) => ({ node: entry.node, x: entry.x - minX, y: entry.y - minY, height: entry.height })),
+    ...normalizedLeft.map((entry) => ({ node: entry.node, x: entry.x - minX, y: entry.y - minY, height: entry.height })),
   ];
 }
 
 function layoutBranch(children: MindNode[], direction: 1 | -1): PositionedNode[] & { height: number; anchorY: number } {
   const positioned: PositionedNode[] = [];
   const anchors: number[] = [];
-  let leafIndex = 0;
+  let cursorY = 0;
 
-  function walk(node: MindNode, depth: number): number {
-    if (node.children.length === 0) {
-      const y = leafIndex * Y_GAP;
-      leafIndex += 1;
-      positioned.push({ node, x: direction * depth * X_GAP, y });
-      if (depth === 1) anchors.push(y);
-      return y;
-    }
-
-    const childYs = node.children.map((child) => walk(child, depth + 1));
-    const y = (childYs[0] + childYs[childYs.length - 1]) / 2;
-    positioned.push({ node, x: direction * depth * X_GAP, y });
-    if (depth === 1) anchors.push(y);
-    return y;
-  }
-
-  children.forEach((child) => walk(child, 1));
+  children.forEach((child) => {
+    const subtree = layoutSubtree(child, direction, 1);
+    subtree.entries.forEach((entry) => {
+      positioned.push({ ...entry, y: entry.y + cursorY });
+    });
+    anchors.push(subtree.rootCenterY + cursorY);
+    cursorY += subtree.height + Y_GAP;
+  });
   return Object.assign(positioned, {
-    height: Math.max(0, leafIndex - 1) * Y_GAP + NODE_HEIGHT,
+    height: Math.max(0, cursorY - Y_GAP),
     anchorY: anchors.length ? anchors.reduce((sum, y) => sum + y, 0) / anchors.length : 0,
   });
+}
+
+interface SubtreeLayout {
+  entries: PositionedNode[];
+  height: number;
+  rootCenterY: number;
+}
+
+function layoutSubtree(node: MindNode, direction: 1 | -1, depth: number): SubtreeLayout {
+  const height = calculateNodeHeight(node);
+  if (node.children.length === 0) {
+    return {
+      entries: [{ node, x: direction * depth * X_GAP, y: 0, height }],
+      height,
+      rootCenterY: height / 2,
+    };
+  }
+
+  const childEntries: PositionedNode[] = [];
+  const childCenters: number[] = [];
+  let cursorY = 0;
+
+  node.children.forEach((child) => {
+    const childLayout = layoutSubtree(child, direction, depth + 1);
+    childLayout.entries.forEach((entry) => {
+      childEntries.push({ ...entry, y: entry.y + cursorY });
+    });
+    childCenters.push(childLayout.rootCenterY + cursorY);
+    cursorY += childLayout.height + Y_GAP;
+  });
+
+  const childrenHeight = Math.max(0, cursorY - Y_GAP);
+  const firstCenter = childCenters[0] ?? height / 2;
+  const lastCenter = childCenters[childCenters.length - 1] ?? height / 2;
+  const rootCenterY = (firstCenter + lastCenter) / 2;
+  const rootY = rootCenterY - height / 2;
+  const top = Math.min(rootY, 0);
+  const bottom = Math.max(rootY + height, childrenHeight);
+  const offsetY = -top;
+  const rootEntry: PositionedNode = {
+    node,
+    x: direction * depth * X_GAP,
+    y: rootY + offsetY,
+    height,
+  };
+
+  return {
+    entries: [
+      ...childEntries.map((entry) => ({ ...entry, y: entry.y + offsetY })),
+      rootEntry,
+    ],
+    height: bottom - top,
+    rootCenterY: rootCenterY + offsetY,
+  };
+}
+
+export function calculateNodeHeight(node: MindNode): number {
+  const title = node.title.trim() || "Untitled";
+  const lineCount = estimateTitleLineCount(title);
+  const lineHeight = node.level === 1 ? 20 : 19;
+  const verticalPadding = node.level === 1 ? 28 : 24;
+  const minimum = node.level === 1 ? ROOT_MIN_NODE_HEIGHT : MIN_NODE_HEIGHT;
+  return Math.max(minimum, lineCount * lineHeight + verticalPadding);
+}
+
+function estimateTitleLineCount(title: string): number {
+  const maxUnitsPerLine = 10;
+  let lines = 1;
+  let currentUnits = 0;
+
+  for (const char of title) {
+    const units = /[\u0000-\u00ff]/.test(char) ? 0.55 : 1;
+    if (/\s/.test(char)) {
+      currentUnits += 0.35;
+    } else {
+      currentUnits += units;
+    }
+
+    if (currentUnits > maxUnitsPerLine) {
+      lines += 1;
+      currentUnits = units;
+    }
+  }
+
+  return Math.min(8, lines);
 }
 
 export function exportTreeAsPng(root: MindNode, fileName: string): void {
   const nodes = layoutTree(root);
   const maxX = Math.max(...nodes.map((entry) => entry.x)) + NODE_WIDTH + PADDING * 2;
-  const maxY = Math.max(...nodes.map((entry) => entry.y)) + NODE_HEIGHT + PADDING * 2;
+  const maxY = Math.max(...nodes.map((entry) => entry.y + entry.height)) + PADDING * 2;
   const canvas = document.createElement("canvas");
   const scale = window.devicePixelRatio || 1;
   canvas.width = maxX * scale;
@@ -82,9 +173,9 @@ export function exportTreeAsPng(root: MindNode, fileName: string): void {
       if (!childEntry) continue;
       const childIsLeft = childEntry.x < entry.x;
       const startX = PADDING + entry.x + (childIsLeft ? 0 : NODE_WIDTH);
-      const startY = PADDING + entry.y + NODE_HEIGHT / 2;
+      const startY = PADDING + entry.y + entry.height / 2;
       const endX = PADDING + childEntry.x + (childIsLeft ? NODE_WIDTH : 0);
-      const endY = PADDING + childEntry.y + NODE_HEIGHT / 2;
+      const endY = PADDING + childEntry.y + childEntry.height / 2;
       const midX = (startX + endX) / 2;
       context.beginPath();
       context.moveTo(startX, startY);
@@ -99,12 +190,12 @@ export function exportTreeAsPng(root: MindNode, fileName: string): void {
     context.fillStyle = "#fffdf8";
     context.strokeStyle = entry.node.level === 1 ? "#255c4a" : "#365348";
     context.lineWidth = entry.node.level === 1 ? 3 : 1.5;
-    roundRect(context, x, y, NODE_WIDTH, NODE_HEIGHT, 12);
+    roundRect(context, x, y, NODE_WIDTH, entry.height, 12);
     context.fill();
     context.stroke();
     context.fillStyle = "#1f2d28";
-    context.font = `${entry.node.level === 1 ? "700" : "600"} 15px Georgia, serif`;
-    drawCenteredWrappedText(context, entry.node.title, x + 16, y, NODE_WIDTH - 32, NODE_HEIGHT, 18);
+    context.font = `${entry.node.level === 1 ? "700" : "600"} 15px ${EXPORT_FONT_FAMILY}`;
+    drawCenteredWrappedText(context, entry.node.title, x + 16, y, NODE_WIDTH - 32, entry.height, 18);
   }
 
   const link = document.createElement("a");
@@ -124,25 +215,100 @@ function roundRect(context: CanvasRenderingContext2D, x: number, y: number, widt
 }
 
 function drawCenteredWrappedText(context: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, height: number, lineHeight: number): void {
-  const words = text.split(/\s+/);
-  let line = "";
-  const lines: string[] = [];
-  for (const word of words) {
-    const testLine = line ? `${line} ${word}` : word;
-    if (context.measureText(testLine).width > maxWidth && line) {
-      lines.push(line);
-      line = word;
-      if (lines.length > 1) break;
-    } else {
-      line = testLine;
-    }
-  }
-  if (line && lines.length <= 1) {
-    lines.push(line);
-  }
+  const maxLines = Math.max(1, Math.floor((height - 16) / lineHeight));
+  const lines = wrapCanvasTextLines(context, text, maxWidth, maxLines);
   context.textBaseline = "middle";
   const firstLineY = y + height / 2 - ((lines.length - 1) * lineHeight) / 2;
   lines.forEach((textLine, index) => {
     context.fillText(textLine, x, firstLineY + index * lineHeight);
   });
+}
+
+export function wrapCanvasTextLines(
+  context: TextMeasureContext,
+  text: string,
+  maxWidth: number,
+  maxLines = Number.POSITIVE_INFINITY,
+): string[] {
+  const normalized = (text.trim() || "Untitled").replace(/\s+/g, " ");
+  const rawLines = wrapCanvasTextWithoutLimit(context, normalized, maxWidth);
+  const lineLimit = Math.max(1, Math.floor(maxLines));
+  if (rawLines.length <= lineLimit) {
+    return rawLines;
+  }
+
+  const visibleLines = rawLines.slice(0, lineLimit);
+  visibleLines[visibleLines.length - 1] = fitLineWithEllipsis(context, visibleLines[visibleLines.length - 1], maxWidth);
+  return visibleLines;
+}
+
+function wrapCanvasTextWithoutLimit(context: TextMeasureContext, text: string, maxWidth: number): string[] {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    if (!currentLine) {
+      const wordLines = breakTokenByWidth(context, word, maxWidth);
+      lines.push(...wordLines.slice(0, -1));
+      currentLine = wordLines[wordLines.length - 1] ?? "";
+      continue;
+    }
+
+    const candidate = `${currentLine} ${word}`;
+    if (context.measureText(candidate).width <= maxWidth) {
+      currentLine = candidate;
+      continue;
+    }
+
+    lines.push(currentLine);
+    const wordLines = breakTokenByWidth(context, word, maxWidth);
+    lines.push(...wordLines.slice(0, -1));
+    currentLine = wordLines[wordLines.length - 1] ?? "";
+  }
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines.length ? lines : ["Untitled"];
+}
+
+function breakTokenByWidth(context: TextMeasureContext, token: string, maxWidth: number): string[] {
+  if (context.measureText(token).width <= maxWidth) {
+    return [token];
+  }
+
+  const lines: string[] = [];
+  let currentLine = "";
+  for (const char of Array.from(token)) {
+    const candidate = `${currentLine}${char}`;
+    if (!currentLine || context.measureText(candidate).width <= maxWidth) {
+      currentLine = candidate;
+      continue;
+    }
+
+    lines.push(currentLine);
+    currentLine = char;
+  }
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines;
+}
+
+function fitLineWithEllipsis(context: TextMeasureContext, line: string, maxWidth: number): string {
+  const ellipsis = "...";
+  if (context.measureText(`${line}${ellipsis}`).width <= maxWidth) {
+    return `${line}${ellipsis}`;
+  }
+
+  const chars = Array.from(line);
+  while (chars.length && context.measureText(`${chars.join("")}${ellipsis}`).width > maxWidth) {
+    chars.pop();
+  }
+
+  return chars.length ? `${chars.join("")}${ellipsis}` : ellipsis;
 }

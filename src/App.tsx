@@ -4,8 +4,10 @@ import { MindMapCanvas } from "./components/MindMapCanvas";
 import { SettingsModal } from "./components/SettingsModal";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
+import { ChevronLeftIcon, ChevronRightIcon, StatusDotIcon, TrashIcon, XIcon } from "./components/Icons";
+import { deleteDocumentById } from "./domain/documents";
 import { createNodeId } from "./domain/ids";
-import { createDefaultDocument, parseMarkdown, serializeMarkdown } from "./domain/markdown";
+import { createDefaultDocument, MULTIPLE_H1_NORMALIZED_WARNING, parseMarkdown, serializeMarkdown } from "./domain/markdown";
 import { exportTreeAsPng } from "./domain/pngExport";
 import { loadPersistedState, savePersistedState } from "./domain/storage";
 import { synchronizeDocument, testWebDavConnection } from "./domain/sync";
@@ -13,6 +15,10 @@ import { addChildNode, addSiblingNode, collectSubtreeIds, deleteNodes, moveSubtr
 import type { BackupEntry, DocumentState, GroupFrame, WebDavConfig } from "./domain/types";
 
 type Mode = "map" | "markdown";
+type TaskDeleteTarget = {
+  documentId: string;
+  title: string;
+};
 
 function downloadText(fileName: string, text: string): void {
   const link = document.createElement("a");
@@ -20,6 +26,10 @@ function downloadText(fileName: string, text: string): void {
   link.href = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));
   link.click();
   URL.revokeObjectURL(link.href);
+}
+
+function taskTitle(document: DocumentState): string {
+  return document.fileName.replace(/\.md$/i, "") || "未命名任务";
 }
 
 function markDirty(
@@ -61,7 +71,9 @@ export default function App() {
   const [mode, setMode] = useState<Mode>("map");
   const [selectedIds, setSelectedIds] = useState<string[]>([initialActiveDocument.root.id]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [taskDeleteTarget, setTaskDeleteTarget] = useState<TaskDeleteTarget | null>(null);
   const [message, setMessage] = useState("");
   const [testMessage, setTestMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -166,18 +178,57 @@ export default function App() {
     setMessage("已保存当前任务");
   }
 
+  function requestDeleteTask(document: DocumentState): void {
+    if (!document.id) {
+      return;
+    }
+
+    setTaskDeleteTarget({
+      documentId: document.id,
+      title: taskTitle(document),
+    });
+  }
+
+  function confirmDeleteTask(): void {
+    if (!taskDeleteTarget) {
+      return;
+    }
+
+    const result = deleteDocumentById(documents, activeDocumentId, taskDeleteTarget.documentId);
+    if (!result.deleted) {
+      setTaskDeleteTarget(null);
+      return;
+    }
+
+    undoStacksRef.current = Object.fromEntries(
+      Object.entries(undoStacksRef.current).filter(([documentId]) => documentId !== taskDeleteTarget.documentId),
+    );
+    setDocuments(result.documents);
+    setDocumentState(result.activeDocument);
+    setActiveDocumentId(result.activeDocument.id ?? "");
+    if (result.deletedActiveDocument) {
+      setSelectedIds([result.activeDocument.root.id]);
+      setMode("map");
+    }
+    setTaskDeleteTarget(null);
+    setMessage("已删除任务");
+  }
+
   function importMarkdown(file: File): void {
     file.text()
       .then((text) => {
         const parsed = parseMarkdown(text, file.name);
+        const importedMarkdown = parsed.warnings.includes(MULTIPLE_H1_NORMALIZED_WARNING)
+          ? serializeMarkdown(parsed.root)
+          : text;
         replaceDocument({
           id: createNodeId("task"),
           fileName: file.name,
-          markdown: text,
+          markdown: importedMarkdown,
           root: parsed.root,
           groupFrames: [],
           localModifiedAt: new Date().toISOString(),
-          lastSavedMarkdown: text,
+          lastSavedMarkdown: importedMarkdown,
           saveStatus: "saved",
           warnings: parsed.warnings,
         });
@@ -237,7 +288,7 @@ export default function App() {
 
     updateRoot(nextRoot);
     setSelectedIds([nodeId]);
-    setMessage("已移动节点并自动排版");
+    setMessage("已移动节点");
   }
 
   function createGroupFrame(nodeIds: string[]): void {
@@ -298,7 +349,7 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={`app ${focusMode ? "focus-mode" : ""}`}>
       <Toolbar
         mode={mode}
         status={documentState.saveStatus}
@@ -332,22 +383,39 @@ export default function App() {
             title={sidebarCollapsed ? "展开任务列表" : "折叠任务列表"}
             type="button"
           >
-            {sidebarCollapsed ? "›" : "‹"}
+            {sidebarCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
           </button>
           {!sidebarCollapsed ? (
             <>
               <h2>任务列表</h2>
             <div className="task-list">
               {documents.map((document) => (
-                <button
-                  className={document.id === activeDocumentId ? "active" : ""}
+                <div
+                  className={`task-row ${document.id === activeDocumentId ? "active" : ""}`}
                   key={document.id}
-                  onClick={() => switchTask(document.id ?? "")}
-                  type="button"
                 >
-                  <span>{document.fileName.replace(/\.md$/i, "")}</span>
-                  <small>{document.saveStatus === "dirty" ? "未保存" : "已保存"}</small>
-                </button>
+                  <button
+                    aria-current={document.id === activeDocumentId ? "page" : undefined}
+                    className="task-open"
+                    onClick={() => switchTask(document.id ?? "")}
+                    type="button"
+                  >
+                    <span className="task-title">{taskTitle(document)}</span>
+                    <span className={`task-status ${document.saveStatus === "dirty" ? "dirty" : "saved"}`}>
+                      <StatusDotIcon />
+                      {document.saveStatus === "dirty" ? "未保存" : "已保存"}
+                    </span>
+                  </button>
+                  <button
+                    aria-label={`删除任务 ${taskTitle(document)}`}
+                    className="task-delete"
+                    onClick={() => requestDeleteTask(document)}
+                    title="删除任务"
+                    type="button"
+                  >
+                    <TrashIcon />
+                  </button>
+                </div>
               ))}
             </div>
             </>
@@ -377,10 +445,36 @@ export default function App() {
             onCreateGroupFrame={createGroupFrame}
             onUpdateGroupFrameNote={updateGroupFrameNote}
             onDeleteGroupFrame={deleteGroupFrame}
+            focusMode={focusMode}
+            onFocusModeChange={setFocusMode}
+            shortcutsDisabled={taskDeleteTarget !== null}
           />
         )}
       </main>
       <StatusBar document={documentState} message={message} />
+      {taskDeleteTarget ? (
+        <div className="modal-backdrop node-dialog-backdrop" onMouseDown={() => setTaskDeleteTarget(null)}>
+          <section
+            aria-modal="true"
+            className="node-dialog danger"
+            onMouseDown={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <header>
+              <div>
+                <span>删除任务</span>
+                <strong>{taskDeleteTarget.title}</strong>
+              </div>
+              <button aria-label="关闭" onClick={() => setTaskDeleteTarget(null)} type="button"><XIcon /></button>
+            </header>
+            <p>会从本机任务列表中删除这个任务；已导出的 Markdown 文件和备份不会被删除。</p>
+            <footer>
+              <button type="button" onClick={() => setTaskDeleteTarget(null)}>取消</button>
+              <button className="danger-button" type="button" onClick={confirmDeleteTask}>删除任务</button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
       {settingsOpen ? (
         <SettingsModal
           config={webDavConfig}

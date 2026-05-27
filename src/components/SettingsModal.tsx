@@ -1,4 +1,5 @@
 import type { BackupEntry, WebDavConfig } from "../domain/types";
+import { XIcon } from "./Icons";
 
 interface SettingsModalProps {
   config: WebDavConfig;
@@ -16,7 +17,7 @@ export function SettingsModal(props: SettingsModalProps) {
       <section className="settings-modal">
         <header>
           <h2>设置</h2>
-          <button onClick={props.onClose}>×</button>
+          <button aria-label="关闭设置" onClick={props.onClose} type="button"><XIcon /></button>
         </header>
         <div className="settings-grid">
           <label>

@@ -41,4 +41,38 @@ describe("parseNoteMarkdown", () => {
       },
     ]);
   });
+
+  it("renders links, blockquotes, and markdown tables as structured blocks", () => {
+    expect(parseNoteMarkdown(`[OpenAI](https://openai.com)
+
+> quoted note
+
+| 维度 | 说明 |
+| --- | --- |
+| 链接 | [文档](https://example.com) |`)).toEqual([
+      {
+        type: "paragraph",
+        children: [
+          { type: "link", text: "OpenAI", href: "https://openai.com" },
+        ],
+      },
+      {
+        type: "blockquote",
+        children: [{ type: "text", text: "quoted note" }],
+      },
+      {
+        type: "table",
+        header: [
+          [{ type: "text", text: "维度" }],
+          [{ type: "text", text: "说明" }],
+        ],
+        rows: [
+          [
+            [{ type: "text", text: "链接" }],
+            [{ type: "link", text: "文档", href: "https://example.com" }],
+          ],
+        ],
+      },
+    ]);
+  });
 });

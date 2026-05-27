@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultDocument, parseMarkdown, serializeMarkdown } from "./markdown";
+import { createDefaultDocument, MULTIPLE_H1_NORMALIZED_WARNING, parseMarkdown, serializeMarkdown } from "./markdown";
 
 describe("parseMarkdown", () => {
   it("maps H1-H6 headings into a tree and assigns body text to notes", () => {
@@ -41,7 +41,7 @@ Child note.`, "project-notes.md");
     expect(result.warnings).toContain("Markdown has no H1; using file name as root.");
   });
 
-  it("keeps additional H1 sections and reports a warning", () => {
+  it("wraps multiple H1 sections under a new root topic", () => {
     const result = parseMarkdown(`# Root
 
 Root note.
@@ -52,15 +52,16 @@ Other root note.
 
 ## Included child`, "mind.md");
 
-    expect(result.root.title).toBe("Root");
-    expect(result.root.note).toBe("Root note.");
-    expect(result.root.children[0].title).toBe("Other root");
-    expect(result.root.children[0].note).toBe("Other root note.");
-    expect(result.root.children[0].children[0].title).toBe("Included child");
-    expect(result.warnings).toContain("Markdown has multiple H1 headings; additional H1 sections were parsed under the first root.");
+    expect(result.root.title).toBe("根主题");
+    expect(result.root.level).toBe(1);
+    expect(result.root.children.map((node) => node.title)).toEqual(["Root", "Other root"]);
+    expect(result.root.children[0]).toMatchObject({ title: "Root", note: "Root note.", level: 2 });
+    expect(result.root.children[1]).toMatchObject({ title: "Other root", note: "Other root note.", level: 2 });
+    expect(result.root.children[1].children[0]).toMatchObject({ title: "Included child", level: 3 });
+    expect(result.warnings).toContain(MULTIPLE_H1_NORMALIZED_WARNING);
   });
 
-  it("keeps additional H1 sections and their descendants as mind map nodes", () => {
+  it("raises every heading level when wrapping multiple H1 imports", () => {
     const result = parseMarkdown(`# Root
 
 ## Root child
@@ -73,11 +74,15 @@ Second note.
 
 ### Second grandchild`, "mind.md");
 
-    expect(result.root.title).toBe("Root");
-    expect(result.root.children.map((node) => node.title)).toEqual(["Root child", "Second root"]);
+    expect(result.root.title).toBe("根主题");
+    expect(result.root.children.map((node) => [node.title, node.level])).toEqual([
+      ["Root", 2],
+      ["Second root", 2],
+    ]);
+    expect(result.root.children[0].children[0]).toMatchObject({ title: "Root child", level: 3 });
     expect(result.root.children[1].note).toBe("Second note.");
-    expect(result.root.children[1].children[0].title).toBe("Second child");
-    expect(result.root.children[1].children[0].children[0].title).toBe("Second grandchild");
+    expect(result.root.children[1].children[0]).toMatchObject({ title: "Second child", level: 3 });
+    expect(result.root.children[1].children[0].children[0]).toMatchObject({ title: "Second grandchild", level: 4 });
   });
 });
 

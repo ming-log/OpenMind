@@ -6,6 +6,18 @@ export interface CanvasSize {
   scale: number;
 }
 
+export interface PanPoint {
+  x: number;
+  y: number;
+}
+
+export interface ZoomAtPoint {
+  pan: PanPoint;
+  point: PanPoint;
+  currentScale: number;
+  nextScale: number;
+}
+
 export interface DropPoint {
   x: number;
   y: number;
@@ -22,6 +34,7 @@ export interface NodeRect {
 export interface DropNodeRect extends NodeRect {
   parentId: string;
   index: number;
+  side?: "left" | "right";
 }
 
 export interface DropIntent {
@@ -45,6 +58,15 @@ export function calculateCenteredPan(size: CanvasSize): { x: number; y: number }
   };
 }
 
+export function calculatePanForZoomAtPoint(input: ZoomAtPoint): PanPoint {
+  const mapX = (input.point.x - input.pan.x) / input.currentScale;
+  const mapY = (input.point.y - input.pan.y) / input.currentScale;
+  return {
+    x: input.point.x - mapX * input.nextScale,
+    y: input.point.y - mapY * input.nextScale,
+  };
+}
+
 export function findDropTarget(point: DropPoint, rects: NodeRect[], excludedIds: Set<string>): string | undefined {
   return rects.find((rect) => (
     !excludedIds.has(rect.id)
@@ -57,6 +79,7 @@ export function findDropTarget(point: DropPoint, rects: NodeRect[], excludedIds:
 
 export function findDropIntent(point: DropPoint, rects: DropNodeRect[], excludedIds: Set<string>): DropIntent | undefined {
   const eligibleRects = rects.filter((rect) => !excludedIds.has(rect.id));
+  const rootId = rects.find((rect) => rect.id === rect.parentId)?.id;
   const containing = eligibleRects.find((rect) => containsPoint(point, rect));
   if (containing) {
     if (point.x >= containing.left + containing.width * 0.75 || point.x <= containing.left + containing.width * 0.25) {
@@ -74,6 +97,7 @@ export function findDropIntent(point: DropPoint, rects: DropNodeRect[], excluded
       index: point.y < containing.top + containing.height / 2 ? containing.index : containing.index + 1,
       placement: point.y < containing.top + containing.height / 2 ? "before" : "after",
       targetId: containing.id,
+      side: containing.parentId === rootId ? containing.side ?? "right" : undefined,
     };
   }
 

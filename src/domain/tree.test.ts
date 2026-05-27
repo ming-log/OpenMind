@@ -111,6 +111,34 @@ describe("tree editing helpers", () => {
     expect(moved.children[1].children.map((node) => node.id)).toEqual(["a1"]);
   });
 
+  it("updates the side of a root-level subtree when moved across sides", () => {
+    const root: MindNode = {
+      id: "root",
+      title: "Root",
+      note: "",
+      level: 1,
+      children: [
+        { id: "left", title: "Left", note: "", level: 2, side: "left", children: [] },
+        {
+          id: "right",
+          title: "Right",
+          note: "",
+          level: 2,
+          side: "right",
+          children: [
+            { id: "right-child", title: "Right child", note: "", level: 3, side: "right", children: [] },
+          ],
+        },
+      ],
+    };
+
+    const moved = moveSubtree(root, "right", "root", 0, "left");
+
+    expect(moved.children.map((node) => node.id)).toEqual(["right", "left"]);
+    expect(moved.children[0].side).toBe("left");
+    expect(moved.children[0].children[0].side).toBe("left");
+  });
+
   it("keeps same-parent insertion indexes stable after removing the moved node", () => {
     const movedBeforeOriginalNextSibling = moveSubtree(fixture(), "a", "root", 1);
     const movedAfterOriginalPreviousSibling = moveSubtree(fixture(), "b", "root", 1);

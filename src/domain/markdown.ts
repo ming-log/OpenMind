@@ -7,6 +7,8 @@ interface HeadingToken {
   body: string[];
 }
 
+export const MULTIPLE_H1_NORMALIZED_WARNING = "Markdown has multiple H1 headings; wrapped them under 根主题.";
+
 const SIDE_MARKER_PATTERN = /^<!--\s*openmind:side=(left|right)\s*-->\s*$/;
 
 function titleFromFileName(fileName: string): string {
@@ -91,12 +93,25 @@ export function parseMarkdown(markdown: string, fileName = "OpenMind.md"): Parse
     return { root, warnings };
   }
 
-  const scopedTokens = tokens.slice(firstH1Index);
-  const hasAdditionalH1 = scopedTokens.some((token, index) => index > 0 && token.level === 1);
-  if (hasAdditionalH1) {
-    warnings.push("Markdown has multiple H1 headings; additional H1 sections were parsed under the first root.");
+  const h1Count = tokens.filter((token) => token.level === 1).length;
+  if (h1Count > 1) {
+    warnings.push(MULTIPLE_H1_NORMALIZED_WARNING);
+    const root: MindNode = {
+      id: createStableTestId("md", 0),
+      title: "根主题",
+      note: normalizeNote(prelude),
+      level: 1,
+      children: [],
+    };
+    const shiftedNodes = tokens.map((token, index) => headingToNode({
+      ...token,
+      level: Math.min(token.level + 1, 6),
+    }, index + 1));
+    attachChildren(root, shiftedNodes);
+    return { root, warnings };
   }
 
+  const scopedTokens = tokens.slice(firstH1Index);
   const nodes = scopedTokens.map((token, index) => headingToNode(token, index));
   const root = nodes[0];
   attachChildren(root, nodes.slice(1));

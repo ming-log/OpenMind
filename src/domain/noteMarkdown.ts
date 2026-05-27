@@ -3,11 +3,14 @@ export type InlineToken =
   | { type: "strong"; text: string }
   | { type: "em"; text: string }
   | { type: "code"; text: string }
+  | { type: "link"; text: string; href: string }
   | { type: "image"; alt: string; src: string };
 
 export type NoteBlock =
   | { type: "paragraph"; children: InlineToken[] }
+  | { type: "blockquote"; children: InlineToken[] }
   | { type: "list"; items: InlineToken[][] }
+  | { type: "table"; header: InlineToken[][]; rows: InlineToken[][][] }
   | { type: "codeBlock"; language: string; code: string };
 
 export function parseNoteMarkdown(markdown: string): NoteBlock[] {
@@ -62,10 +65,18 @@ export function parseNoteMarkdown(markdown: string): NoteBlock[] {
     }
 
     const lines = chunk.split("\n").map((line) => line.trim()).filter(Boolean);
-    if (lines.length > 0 && lines.every((line) => /^[-*]\s+/.test(line))) {
+    const table = parseTable(lines);
+    if (table) {
+      blocks.push(table);
+    } else if (lines.length > 0 && lines.every((line) => /^[-*]\s+/.test(line))) {
       blocks.push({
         type: "list",
         items: lines.map((line) => parseInline(line.replace(/^[-*]\s+/, ""))),
+      });
+    } else if (lines.length > 0 && lines.every((line) => /^>\s?/.test(line))) {
+      blocks.push({
+        type: "blockquote",
+        children: parseInline(lines.map((line) => line.replace(/^>\s?/, "")).join(" ")),
       });
     } else {
       blocks.push({ type: "paragraph", children: parseInline(lines.join(" ")) });
@@ -75,9 +86,40 @@ export function parseNoteMarkdown(markdown: string): NoteBlock[] {
   return blocks;
 }
 
+function parseTable(lines: string[]): Extract<NoteBlock, { type: "table" }> | undefined {
+  if (lines.length < 2 || !lines[0].includes("|") || !isTableDivider(lines[1])) {
+    return undefined;
+  }
+
+  const header = splitTableRow(lines[0]).map(parseInline);
+  const rows = lines.slice(2)
+    .filter((line) => line.includes("|"))
+    .map((line) => splitTableRow(line).map(parseInline));
+
+  if (!header.length || !rows.length) {
+    return undefined;
+  }
+
+  return { type: "table", header, rows };
+}
+
+function isTableDivider(line: string): boolean {
+  const cells = splitTableRow(line);
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+function splitTableRow(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
 function parseInline(input: string): InlineToken[] {
   const tokens: InlineToken[] = [];
-  const pattern = /(!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|\*\*([^*]+)\*\*|`([^`]+)`|\*([^*]+)\*)/g;
+  const pattern = /(!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|\*\*([^*]+)\*\*|`([^`]+)`|\*([^*]+)\*)/g;
   let cursor = 0;
   let match: RegExpExecArray | null;
 
@@ -87,12 +129,14 @@ function parseInline(input: string): InlineToken[] {
     }
     if (match[2] !== undefined && match[3]) {
       tokens.push({ type: "image", alt: match[2], src: match[3] });
-    } else if (match[4]) {
-      tokens.push({ type: "strong", text: match[4] });
-    } else if (match[5]) {
-      tokens.push({ type: "code", text: match[5] });
+    } else if (match[4] && match[5]) {
+      tokens.push({ type: "link", text: match[4], href: match[5] });
     } else if (match[6]) {
-      tokens.push({ type: "em", text: match[6] });
+      tokens.push({ type: "strong", text: match[6] });
+    } else if (match[7]) {
+      tokens.push({ type: "code", text: match[7] });
+    } else if (match[8]) {
+      tokens.push({ type: "em", text: match[8] });
     }
     cursor = match.index + match[0].length;
   }
