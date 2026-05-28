@@ -1,11 +1,15 @@
 # OpenMind
 
 <p>
+  简体中文 |
   <a href="./README.en.md">English</a> |
-  <a href="https://github.com/ming-log/OpenMind">GitHub</a>
+  <a href="https://github.com/ming-log/OpenMind">GitHub</a> |
+  <a href="https://ming-log.github.io/OpenMind/">在线体验</a>
 </p>
 
 OpenMind 是一个本地优先的 Markdown 思维导图工具。它把 Markdown 作为可读、可迁移的源文件，同时提供导图视图、Markdown 编辑、任务管理、主题切换、PNG 导出、WebDAV 同步与动态分享。
+
+在线地址：[https://ming-log.github.io/OpenMind/](https://ming-log.github.io/OpenMind/)
 
 ![OpenMind logo](./public/openmind-logo.png)
 

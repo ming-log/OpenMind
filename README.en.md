@@ -1,11 +1,15 @@
 # OpenMind
 
 <p>
-  <a href="./README.md">中文</a> |
-  <a href="https://github.com/ming-log/OpenMind">GitHub</a>
+  <a href="./README.md">简体中文</a> |
+  English |
+  <a href="https://github.com/ming-log/OpenMind">GitHub</a> |
+  <a href="https://ming-log.github.io/OpenMind/">Live Demo</a>
 </p>
 
 OpenMind is a local-first Markdown mind-mapping app. It keeps Markdown as the readable and portable source format while providing a visual mind-map editor, Markdown editing, task management, themes, PNG export, WebDAV sync, and dynamic read-only sharing.
+
+Live demo: [https://ming-log.github.io/OpenMind/](https://ming-log.github.io/OpenMind/)
 
 ![OpenMind logo](./public/openmind-logo.png)
 
