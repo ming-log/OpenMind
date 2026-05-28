@@ -70,10 +70,12 @@ describe("mind map node dialogs", () => {
     expect(iconsSource).toContain('<path d="M14 3H7');
   });
 
-  it("supports clearing multi-selection and deleting group frames from the canvas", () => {
+  it("supports clearing multi-selection and deleting selected group frames with Delete", () => {
     expect(canvasSource).toContain("onClearSelection");
-    expect(canvasSource).toContain("group-frame-delete");
+    expect(canvasSource).toContain("selectedFrameId");
+    expect(canvasSource).toContain("props.onDeleteGroupFrame(selectedFrameId)");
     expect(canvasSource).toContain("onDeleteGroupFrame");
+    expect(canvasSource).not.toContain("group-frame-delete");
   });
 
   it("auto-pulls configured WebDAV content and keeps the selection box as a transparent dashed frame", () => {
@@ -125,19 +127,58 @@ describe("mind map node dialogs", () => {
     expect(appSource).toContain("addParentNode");
   });
 
-  it("keeps compact group notes outside the correct branch side", () => {
+  it("draws group frames around selected nodes and allows single-node frames", () => {
+    const groupFrameNoteStyles = stylesSource.match(/\.group-frame-note\s*\{[^}]*\}/)?.[0] ?? "";
+
     expect(canvasSource).toContain("getFrameLayout");
     expect(canvasSource).toContain("data-frame-side={layout.side}");
-    expect(canvasSource).toContain('<span className="group-frame-brace" aria-hidden="true" />');
-    expect(canvasSource).toContain("const outerOffset = 18");
-    expect(stylesSource).toContain(".group-frame-brace");
-    expect(stylesSource).toContain(".group-frame-note::before");
-    expect(stylesSource).toContain("border-bottom: 2px solid currentColor");
-    expect(stylesSource).toContain(".group-frame.left .group-frame-brace");
-    expect(stylesSource).toContain(".group-frame.right .group-frame-brace");
-    expect(stylesSource).toContain("top: 50%");
-    expect(canvasSource).toContain("props.selectedIds.length > 1");
-    expect(appSource).toContain("uniqueIds.length < 2");
+    expect(canvasSource).toContain("GROUP_FRAME_PADDING_X = 30");
+    expect(canvasSource).toContain("estimateGroupFrameTopReserve");
+    expect(canvasSource).toContain("reserveRootsByParent");
+    expect(canvasSource).toContain("siblingIndexById");
+    expect(canvasSource).toContain("topLevelById");
+    expect(canvasSource).toContain("getFrameTopReserve");
+    expect(canvasSource).toContain("estimateGroupFrameTopReserve(currentFrame.note) + nestedReserve");
+    expect(canvasSource).toContain("reserves.set(topLevelId");
+    expect(canvasSource).toContain("layoutTree(props.root, { topReserves: frameTopReserves })");
+    expect(canvasSource).toContain("selectedHasGroupFrame");
+    expect(canvasSource).toContain("title={selectedHasGroupFrame ? \"取消选中节点外框\" : \"为选中节点添加外框\"}");
+    expect(canvasSource).toContain("childIsInsideFrame");
+    expect(canvasSource).toContain("getFrameLayout(childFrame, nextVisitedFrameIds)");
+    expect(canvasSource).toContain("second.nodeIds.length - first.nodeIds.length");
+    expect(canvasSource).toContain("input.setSelectionRange(end, end)");
+    expect(canvasSource).not.toContain("input.select()");
+    expect(canvasSource).toContain("right - left + paddingX * 2");
+    expect(canvasSource).toContain("props.selectedIds.length");
+    expect(stylesSource).toContain("border: 1.5px dashed");
+    expect(stylesSource).toContain("background: rgba(187, 247, 208, 0.16)");
+    expect(stylesSource).toContain(".group-frame-box");
+    expect(stylesSource).toContain(".group-frame.selected .group-frame-box");
+    expect(canvasSource).toContain("labelStyle");
+    expect(canvasSource).toContain("boxStyle");
+    expect(canvasSource).toContain("group-frame-note-input");
+    expect(canvasSource).toContain("onBlur={saveFrameEdit}");
+    expect(canvasSource).not.toContain("<span>外框备注</span>");
+    expect(canvasSource).not.toContain("<strong>编辑备注</strong>");
+    expect(canvasSource).toContain("const labelWidth = frameWidth * 0.9");
+    expect(canvasSource).toContain("width: labelWidth");
+    expect(canvasSource).toContain("labelHeight");
+    expect(canvasSource).toContain("GROUP_FRAME_LABEL_GAP = 2");
+    expect(canvasSource).toContain("const boxHeight = bottom - top + paddingTop + paddingBottom");
+    expect(canvasSource).not.toContain("overlappingNodeTop");
+    expect(stylesSource).toContain("left: 50%");
+    expect(stylesSource).toContain("transform: translateX(-50%)");
+    expect(stylesSource).toContain("box-sizing: border-box");
+    expect(stylesSource).toContain("overflow-wrap: anywhere");
+    expect(stylesSource).toContain("white-space: normal");
+    expect(groupFrameNoteStyles).not.toContain("text-overflow: ellipsis");
+    expect(groupFrameNoteStyles).not.toContain("overflow: hidden");
+    expect(stylesSource).not.toContain(".group-frame-brace");
+    expect(stylesSource).not.toContain(".group-frame-delete");
+    expect(appSource).toContain("!uniqueIds.length");
+    expect(appSource).toContain("sortedFrameNodeIds");
+    expect(appSource).toContain("filter((frame) => !sameFrameSet(frame))");
+    expect(appSource).toContain("setMessage(\"已取消外框\")");
   });
 
   it("supports blank-canvas panning and clearing every selected node", () => {
@@ -152,7 +193,8 @@ describe("mind map node dialogs", () => {
     const noteBubbleHoverStyles = stylesSource.match(/\.note-bubble\.hover\s*\{[^}]*\}/)?.[0] ?? "";
 
     expect(stylesSource).toContain(".note-bubble.hover:hover");
-    expect(stylesSource).toContain(".mind-node:hover .note-bubble.hover");
+    expect(stylesSource).toContain(".note-dot:hover ~ .note-bubble.hover");
+    expect(stylesSource).not.toContain(".mind-node:hover .note-bubble.hover");
     expect(stylesSource).toContain("visibility 0s linear 0.36s");
     expect(stylesSource).toContain("z-index: 120");
     expect(stylesSource).toMatch(/\.mind-node:hover\s*\{[^}]*z-index:\s*40/);

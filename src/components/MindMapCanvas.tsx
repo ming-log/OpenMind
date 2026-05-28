@@ -79,6 +79,8 @@ type FrameEditor = {
 type FrameLayout = {
   side: "left" | "right";
   style: CSSProperties;
+  boxStyle: CSSProperties;
+  labelStyle: CSSProperties;
 };
 
 type CanvasDrag = {
@@ -124,13 +126,95 @@ const RESIZE_HANDLES: Array<{
   { name: "north-west", directionX: -1, directionY: -1 },
 ];
 
+const GROUP_FRAME_PADDING_X = 30;
+const GROUP_FRAME_PADDING_TOP = 28;
+const GROUP_FRAME_PADDING_BOTTOM = 22;
+const GROUP_FRAME_LABEL_GAP = 2;
+const GROUP_FRAME_LABEL_CLEARANCE = 12;
+
+function estimateGroupFrameLabelHeight(text: string, labelWidth: number): number {
+  const labelVisualLength = Array.from(text).reduce((total, char) => total + (char.charCodeAt(0) > 255 ? 1.7 : 1), 0);
+  const labelLines = Math.max(1, Math.ceil(labelVisualLength / Math.max(8, Math.floor(labelWidth / 7))));
+  return labelLines * 17 + 14;
+}
+
+function estimateGroupFrameTopReserve(note: string): number {
+  return GROUP_FRAME_PADDING_TOP + estimateGroupFrameLabelHeight(note.trim() || "备注", 320) + GROUP_FRAME_LABEL_GAP + GROUP_FRAME_LABEL_CLEARANCE;
+}
+
 export function MindMapCanvas(props: MindMapCanvasProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const dragPreviewRef = useRef<HTMLElement | null>(null);
   const dragFrameRef = useRef<number | null>(null);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const suppressClickRef = useRef(false);
-  const nodes = useMemo(() => layoutTree(props.root), [props.root]);
+  const frameTopReserves = useMemo(() => {
+    const parentById = new Map<string, string>();
+    const siblingIndexById = new Map<string, number>();
+    const topLevelById = new Map<string, string>();
+
+    function walk(node: MindNode, topLevelId: string): void {
+      topLevelById.set(node.id, topLevelId);
+      node.children.forEach((child, index) => {
+        parentById.set(child.id, node.id);
+        siblingIndexById.set(child.id, index);
+        walk(child, topLevelId);
+      });
+    }
+
+    props.root.children.forEach((child, index) => {
+      parentById.set(child.id, props.root.id);
+      siblingIndexById.set(child.id, index);
+      walk(child, child.id);
+    });
+
+    return props.groupFrames.reduce((reserves, frame) => {
+      const frameIds = new Set(frame.nodeIds);
+      const getFrameTopReserve = (currentFrame: GroupFrame, visitedFrameIds = new Set<string>()): number => {
+        if (visitedFrameIds.has(currentFrame.id)) {
+          return 0;
+        }
+        const nextVisitedFrameIds = new Set(visitedFrameIds);
+        nextVisitedFrameIds.add(currentFrame.id);
+        const currentFrameNodeIds = new Set(currentFrame.nodeIds);
+        const nestedReserve = props.groupFrames.reduce((maximumReserve, childFrame) => {
+          if (childFrame.id === currentFrame.id) {
+            return maximumReserve;
+          }
+          const childIsInsideFrame = childFrame.nodeIds.length < currentFrame.nodeIds.length
+            && childFrame.nodeIds.every((nodeId) => currentFrameNodeIds.has(nodeId));
+          return childIsInsideFrame
+            ? Math.max(maximumReserve, getFrameTopReserve(childFrame, nextVisitedFrameIds))
+            : maximumReserve;
+        }, 0);
+        return estimateGroupFrameTopReserve(currentFrame.note) + nestedReserve;
+      };
+      const reserve = getFrameTopReserve(frame);
+      const reserveRootsByParent = new Map<string, string>();
+
+      frame.nodeIds.forEach((nodeId) => {
+        const parentId = parentById.get(nodeId);
+        if (parentId && frameIds.has(parentId)) {
+          return;
+        }
+        const parentKey = parentId ?? props.root.id;
+        const currentRootId = reserveRootsByParent.get(parentKey);
+        if (!currentRootId || (siblingIndexById.get(nodeId) ?? 0) < (siblingIndexById.get(currentRootId) ?? 0)) {
+          reserveRootsByParent.set(parentKey, nodeId);
+        }
+      });
+
+      reserveRootsByParent.forEach((nodeId) => {
+        reserves.set(nodeId, Math.max(reserves.get(nodeId) ?? 0, reserve));
+        const topLevelId = topLevelById.get(nodeId);
+        if (topLevelId && topLevelId !== nodeId) {
+          reserves.set(topLevelId, Math.max(reserves.get(topLevelId) ?? 0, reserve));
+        }
+      });
+      return reserves;
+    }, new Map<string, number>());
+  }, [props.groupFrames, props.root]);
+  const nodes = useMemo(() => layoutTree(props.root, { topReserves: frameTopReserves }), [frameTopReserves, props.root]);
   const byId = useMemo(() => new Map(nodes.map((entry) => [entry.node.id, entry])), [nodes]);
   const nodeRelations = useMemo(() => {
     const relations = new Map<string, { parentId: string; index: number }>();
@@ -168,6 +252,7 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
   const [isSpacePanning, setIsSpacePanning] = useState(false);
   const [menu, setMenu] = useState<{ node: MindNode; x: number; y: number } | null>(null);
   const [pinnedNoteId, setPinnedNoteId] = useState<string | null>(null);
+  const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
   const [titleEditor, setTitleEditor] = useState<TitleEditor | null>(null);
   const [noteDrawer, setNoteDrawer] = useState<NoteDrawer | null>(null);
   const [frameEditor, setFrameEditor] = useState<FrameEditor | null>(null);
@@ -175,6 +260,7 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
   const [activeDropIntent, setActiveDropIntent] = useState<DropIntent | undefined>();
   const titleInputRef = useRef<HTMLTextAreaElement>(null);
   const noteInputRef = useRef<HTMLTextAreaElement>(null);
+  const frameInputRef = useRef<HTMLTextAreaElement>(null);
 
   const width = Math.max(...nodes.map((entry) => entry.x + getRenderedNodeWidth(entry))) + PADDING * 2;
   const height = Math.max(...nodes.map((entry) => entry.y + getRenderedNodeHeight(entry))) + PADDING * 2;
@@ -207,7 +293,38 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
     const input = titleInputRef.current;
     if (!input) return;
     resizeTitleInput(input);
-  }, [titleEditor]);
+  }, [titleEditor?.value]);
+
+  useEffect(() => {
+    if (!titleEditor) return;
+    const input = titleInputRef.current;
+    if (!input) return;
+    window.requestAnimationFrame(() => {
+      const end = input.value.length;
+      input.focus();
+      input.setSelectionRange(end, end);
+      resizeTitleInput(input);
+    });
+  }, [titleEditor?.nodeId]);
+
+  useEffect(() => {
+    if (!frameEditor) return;
+    const input = frameInputRef.current;
+    if (!input) return;
+    resizeFrameInput(input);
+  }, [frameEditor?.value]);
+
+  useEffect(() => {
+    if (!frameEditor) return;
+    const input = frameInputRef.current;
+    if (!input) return;
+    window.requestAnimationFrame(() => {
+      const end = input.value.length;
+      input.focus();
+      input.setSelectionRange(end, end);
+      resizeFrameInput(input);
+    });
+  }, [frameEditor?.frameId]);
 
   useEffect(() => {
     if (!titleEditor) return undefined;
@@ -276,6 +393,19 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
   function resizeTitleInput(input: HTMLTextAreaElement): void {
     input.style.height = "0px";
     input.style.height = `${input.scrollHeight}px`;
+  }
+
+  function resizeFrameInput(input: HTMLTextAreaElement): void {
+    input.style.height = "0px";
+    input.style.height = `${input.scrollHeight}px`;
+  }
+
+  function saveFrameEdit(): void {
+    if (!frameEditor) return;
+    if (!props.readOnly) {
+      props.onUpdateGroupFrameNote(frameEditor.frameId, frameEditor.value);
+    }
+    setFrameEditor(null);
   }
 
   function insertTitleLineBreak(input: HTMLTextAreaElement): void {
@@ -738,6 +868,14 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
         return;
       }
 
+      if (event.key === "Delete" && selectedFrameId) {
+        event.preventDefault();
+        setMenu(null);
+        props.onDeleteGroupFrame(selectedFrameId);
+        setSelectedFrameId(null);
+        return;
+      }
+
       const selectedId = props.selectedId ?? props.selectedIds[0];
       if (!selectedId) {
         return;
@@ -801,7 +939,7 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
       window.removeEventListener("keyup", keyup);
       window.removeEventListener("blur", blur);
     };
-  }, [byId, deleteTarget, frameEditor, menu, nodeDrag, nodeResize, noteDrawer, props, titleEditor]);
+  }, [byId, deleteTarget, frameEditor, menu, nodeDrag, nodeResize, noteDrawer, props, selectedFrameId, titleEditor]);
 
   const normalizedSelection = selectionBox ? normalizeSelectionBox(selectionBox) : null;
   const draggedEntry = nodeDrag ? byId.get(nodeDrag.nodeId) : undefined;
@@ -872,30 +1010,77 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
     }, nextScale);
   }
 
-  function getFrameLayout(frame: GroupFrame): FrameLayout | undefined {
+  function getFrameLayout(frame: GroupFrame, visitedFrameIds = new Set<string>()): FrameLayout | undefined {
+    if (visitedFrameIds.has(frame.id)) {
+      return undefined;
+    }
+    const nextVisitedFrameIds = new Set(visitedFrameIds);
+    nextVisitedFrameIds.add(frame.id);
     const entries = frame.nodeIds
       .map((nodeId) => byId.get(nodeId))
       .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
-    if (entries.length < 2) {
+    if (!entries.length) {
       return undefined;
     }
 
-    const left = Math.min(...entries.map((entry) => getRenderedNodeLeft(entry)));
-    const top = Math.min(...entries.map((entry) => getRenderedNodeTop(entry)));
-    const right = Math.max(...entries.map((entry) => getRenderedNodeLeft(entry) + getRenderedNodeWidth(entry)));
-    const bottom = Math.max(...entries.map((entry) => getRenderedNodeTop(entry) + getRenderedNodeHeight(entry)));
+    let left = Math.min(...entries.map((entry) => getRenderedNodeLeft(entry)));
+    let top = Math.min(...entries.map((entry) => getRenderedNodeTop(entry)));
+    let right = Math.max(...entries.map((entry) => getRenderedNodeLeft(entry) + getRenderedNodeWidth(entry)));
+    let bottom = Math.max(...entries.map((entry) => getRenderedNodeTop(entry) + getRenderedNodeHeight(entry)));
+    const frameNodeIds = new Set(frame.nodeIds);
+    props.groupFrames.forEach((childFrame) => {
+      if (childFrame.id === frame.id) {
+        return;
+      }
+      const childNodeIds = new Set(childFrame.nodeIds);
+      const childIsInsideFrame = childNodeIds.size < frameNodeIds.size
+        && childFrame.nodeIds.every((nodeId) => frameNodeIds.has(nodeId));
+      if (!childIsInsideFrame) {
+        return;
+      }
+      const childLayout = getFrameLayout(childFrame, nextVisitedFrameIds);
+      if (!childLayout) {
+        return;
+      }
+      const childLeft = Number(childLayout.style.left);
+      const childTop = Number(childLayout.style.top);
+      const childWidth = Number(childLayout.style.width);
+      const childHeight = Number(childLayout.style.height);
+      left = Math.min(left, childLeft);
+      top = Math.min(top, childTop);
+      right = Math.max(right, childLeft + childWidth);
+      bottom = Math.max(bottom, childTop + childHeight);
+    });
     const rootEntry = byId.get(props.root.id);
     const rootCenterX = rootEntry ? getRenderedNodeLeft(rootEntry) + getRenderedNodeWidth(rootEntry) / 2 : (left + right) / 2;
     const side = (left + right) / 2 < rootCenterX ? "left" : "right";
-    const outerOffset = 18;
+    const paddingX = GROUP_FRAME_PADDING_X;
+    const paddingTop = GROUP_FRAME_PADDING_TOP;
+    const paddingBottom = GROUP_FRAME_PADDING_BOTTOM;
+    const frameWidth = right - left + paddingX * 2;
+    const labelWidth = frameWidth * 0.9;
+    const editedFrameNote = frameEditor?.frameId === frame.id ? frameEditor.value : frame.note;
+    const labelText = editedFrameNote.trim() || "备注";
+    const labelHeight = estimateGroupFrameLabelHeight(labelText, labelWidth);
+    const labelGap = GROUP_FRAME_LABEL_GAP;
+    const boxTop = labelHeight + labelGap;
+    const boxHeight = bottom - top + paddingTop + paddingBottom;
+    const frameTop = top - paddingTop - boxTop;
 
     return {
       side,
       style: {
-        left: side === "left" ? left - outerOffset : right + outerOffset,
-        top: top - 6,
-        width: 1,
-        height: bottom - top + 12,
+        left: left - paddingX,
+        top: frameTop,
+        width: frameWidth,
+        height: boxTop + boxHeight,
+      },
+      boxStyle: {
+        top: boxTop,
+        height: boxHeight,
+      },
+      labelStyle: {
+        width: labelWidth,
       },
     };
   }
@@ -971,6 +1156,34 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
   const canUseNodeTools = Boolean(primarySelectedEntry) && props.selectedIds.length <= 1;
   const canAddSibling = canUseNodeTools && primarySelectedId !== props.root.id;
   const canAddParent = canUseNodeTools && primarySelectedId !== props.root.id;
+  const selectedFrameNodeIds = useMemo(() => {
+    const ids = new Set<string>();
+
+    function collect(node: MindNode): void {
+      ids.add(node.id);
+      node.children.forEach(collect);
+    }
+
+    props.selectedIds.forEach((nodeId) => {
+      const entry = byId.get(nodeId);
+      if (entry) {
+        collect(entry.node);
+      }
+    });
+
+    return [...ids].sort();
+  }, [byId, props.selectedIds]);
+  const selectedHasGroupFrame = useMemo(() => {
+    if (!selectedFrameNodeIds.length) {
+      return false;
+    }
+
+    return props.groupFrames.some((frame) => {
+      const frameIds = [...frame.nodeIds].sort();
+      return frameIds.length === selectedFrameNodeIds.length
+        && frameIds.every((nodeId, index) => nodeId === selectedFrameNodeIds[index]);
+    });
+  }, [props.groupFrames, selectedFrameNodeIds]);
 
   function addSelectedChild(): void {
     if (!primarySelectedId || !canUseNodeTools) return;
@@ -1015,11 +1228,13 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
           const selected = getIntersectingNodeIds(finalSelection, getSelectableNodeRects());
           if (selected.length) {
             props.onSelectMany(selected);
+            setSelectedFrameId(null);
           }
           setSelectionBox(null);
         }
         if (dragStart?.clearSelectionOnClick && isClickDistance(dragStart, event)) {
           props.onClearSelection();
+          setSelectedFrameId(null);
           setPinnedNoteId(null);
           setMenu(null);
         }
@@ -1094,8 +1309,13 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
         >
           <TargetIcon />
         </button>
-        {!props.readOnly && props.selectedIds.length > 1 ? (
-          <button onClick={() => props.onCreateGroupFrame(props.selectedIds)} title="为选中节点添加外框" type="button">
+        {!props.readOnly && props.selectedIds.length ? (
+          <button
+            className={selectedHasGroupFrame ? "active" : ""}
+            onClick={() => props.onCreateGroupFrame(props.selectedIds)}
+            title={selectedHasGroupFrame ? "取消选中节点外框" : "为选中节点添加外框"}
+            type="button"
+          >
             <FrameIcon />
           </button>
         ) : null}
@@ -1182,38 +1402,72 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
               style={getDropPreviewStyle(activeDropIntent)}
             />
           ) : null}
-          {props.groupFrames.map((frame) => {
+          {[...props.groupFrames].sort((first, second) => second.nodeIds.length - first.nodeIds.length).map((frame) => {
             const layout = getFrameLayout(frame);
             if (!layout) return null;
             return (
-              <div className={`group-frame ${layout.side}`} data-frame-side={layout.side} key={frame.id} style={layout.style}>
-                <span className="group-frame-brace" aria-hidden="true" />
-                <button
-                   className="group-frame-note"
-                   onClick={(event) => {
-                     event.stopPropagation();
-                     if (!props.readOnly) {
-                       setFrameEditor({ frameId: frame.id, value: frame.note });
-                     }
-                   }}
-                   type="button"
-                >
-                  {frame.note || "备注"}
-                </button>
-                {!props.readOnly ? (
-                  <button
-                    aria-label="删除外框"
-                    className="group-frame-delete"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      props.onDeleteGroupFrame(frame.id);
+              <div
+                className={`group-frame ${layout.side} ${selectedFrameId === frame.id ? "selected" : ""}`}
+                data-frame-side={layout.side}
+                key={frame.id}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSelectedFrameId(frame.id);
+                  props.onClearSelection();
+                }}
+                onMouseDown={(event) => {
+                  event.stopPropagation();
+                }}
+                style={layout.style}
+              >
+                <span className="group-frame-box" aria-hidden="true" style={layout.boxStyle} />
+                {frameEditor?.frameId === frame.id ? (
+                  <textarea
+                    aria-label="编辑外框备注"
+                    className="group-frame-note group-frame-note-input"
+                    ref={frameInputRef}
+                    rows={1}
+                    style={layout.labelStyle}
+                    value={frameEditor.value}
+                    onBlur={saveFrameEdit}
+                    onChange={(event) => setFrameEditor({ ...frameEditor, value: event.target.value })}
+                    onClick={(event) => event.stopPropagation()}
+                    onInput={(event) => resizeFrameInput(event.currentTarget)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        if (event.ctrlKey) {
+                          return;
+                        }
+                        event.preventDefault();
+                        saveFrameEdit();
+                        return;
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setFrameEditor(null);
+                      }
                     }}
-                    title="删除外框"
+                    onMouseDown={(event) => event.stopPropagation()}
+                  />
+                ) : (
+                  <button
+                    className="group-frame-note"
+                    onClick={(event) => event.stopPropagation()}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setSelectedFrameId(frame.id);
+                      props.onClearSelection();
+                      if (!props.readOnly) {
+                        setFrameEditor({ frameId: frame.id, value: frame.note });
+                      }
+                    }}
+                    style={layout.labelStyle}
                     type="button"
                   >
-                    <XIcon />
+                    {frame.note || "备注"}
                   </button>
-                ) : null}
+                )}
               </div>
             );
           })}
@@ -1273,6 +1527,7 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
                 } else {
                   props.onSelect(entry.node.id);
                 }
+                setSelectedFrameId(null);
                 setPinnedNoteId((current) => (current === entry.node.id ? null : entry.node.id));
                 syncOpenNoteDrawer(entry.node);
               }}
@@ -1309,6 +1564,7 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
                 event.preventDefault();
                 event.stopPropagation();
                 setMenu(null);
+                setSelectedFrameId(null);
                 if (entry.node.id === props.root.id) {
                   props.onSelect(entry.node.id);
                   syncOpenNoteDrawer(entry.node);
@@ -1469,45 +1725,6 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
             </footer>
           </form>
         </aside>
-      ) : null}
-      {frameEditor ? (
-        <div className="modal-backdrop node-dialog-backdrop" onMouseDown={() => setFrameEditor(null)}>
-          <form
-            aria-modal="true"
-            className="node-dialog"
-            onMouseDown={(event) => event.stopPropagation()}
-            onSubmit={(event) => {
-              event.preventDefault();
-              props.onUpdateGroupFrameNote(frameEditor.frameId, frameEditor.value);
-              setFrameEditor(null);
-            }}
-            role="dialog"
-          >
-            <header>
-              <div>
-                <span>外框备注</span>
-                <strong>编辑备注</strong>
-              </div>
-              <button aria-label="关闭" onClick={() => setFrameEditor(null)} type="button"><XIcon /></button>
-            </header>
-            <label className="node-dialog-field">
-              <span>备注内容</span>
-              <textarea
-                autoFocus
-                rows={4}
-                value={frameEditor.value}
-                onChange={(event) => setFrameEditor({ ...frameEditor, value: event.target.value })}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") setFrameEditor(null);
-                }}
-              />
-            </label>
-            <footer>
-              <button type="button" onClick={() => setFrameEditor(null)}>取消</button>
-              <button className="primary" type="submit">保存</button>
-            </footer>
-          </form>
-        </div>
       ) : null}
       {deleteTarget ? (
         <div className="modal-backdrop node-dialog-backdrop" onMouseDown={() => setDeleteTarget(null)}>

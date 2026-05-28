@@ -789,12 +789,27 @@ function EditorApp() {
 
   function createGroupFrame(nodeIds: string[]): void {
     const uniqueIds = Array.from(new Set(nodeIds));
-    if (uniqueIds.length < 2) {
-      setMessage("请先选择至少两个节点");
+    if (!uniqueIds.length) {
+      setMessage("请先选择节点");
       return;
     }
 
     const frameNodeIds = collectSubtreeIds(documentState.root, uniqueIds);
+    const sortedFrameNodeIds = [...frameNodeIds].sort();
+    const sameFrameSet = (frame: GroupFrame) => {
+      const sortedExistingIds = [...frame.nodeIds].sort();
+      return sortedExistingIds.length === sortedFrameNodeIds.length
+        && sortedExistingIds.every((nodeId, index) => nodeId === sortedFrameNodeIds[index]);
+    };
+    const hasExistingFrame = (documentState.groupFrames ?? []).some(sameFrameSet);
+
+    if (hasExistingFrame) {
+      const groupFrames = (documentState.groupFrames ?? []).filter((frame) => !sameFrameSet(frame));
+      commitUndoable(markDirty(documentState, documentState.markdown, documentState.root, documentState.warnings, groupFrames));
+      setMessage("已取消外框");
+      return;
+    }
+
     const groupFrames: GroupFrame[] = [
       ...(documentState.groupFrames ?? []),
       { id: createNodeId("frame"), nodeIds: frameNodeIds, note: "备注" },
@@ -1177,6 +1192,10 @@ interface SharePageProps {
   route: ShareRoute;
 }
 
+function BrandLogo() {
+  return <img className="brand-logo" src={`${import.meta.env.BASE_URL}openmind-logo.png`} alt="" />;
+}
+
 function SharePage(props: SharePageProps) {
   const [persisted, setPersisted] = useState<PersistedState>(() => loadPersistedState(window.localStorage));
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -1287,9 +1306,12 @@ function SharePage(props: SharePageProps) {
     return (
       <div className="share-page" data-theme={themeId}>
         <header className="share-header">
-          <div>
-            <strong>OpenMind</strong>
-            <span>{shareModeLabel}</span>
+          <div className="share-brand">
+            <BrandLogo />
+            <div>
+              <strong>OpenMind</strong>
+              <span>{shareModeLabel}</span>
+            </div>
           </div>
           <button onClick={() => { window.location.hash = ""; }} type="button">返回编辑</button>
         </header>
@@ -1304,9 +1326,12 @@ function SharePage(props: SharePageProps) {
   return (
     <div className="share-page" data-theme={themeId}>
       <header className="share-header">
-        <div>
-          <strong>{taskTitle(sharedDocument)}</strong>
-          <span>{shareModeLabel}</span>
+        <div className="share-brand">
+          <BrandLogo />
+          <div>
+            <strong>{taskTitle(sharedDocument)}</strong>
+            <span>{shareModeLabel}</span>
+          </div>
         </div>
         <button onClick={() => { window.location.hash = ""; }} type="button">返回编辑</button>
       </header>

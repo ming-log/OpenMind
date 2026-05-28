@@ -159,7 +159,14 @@ button:disabled {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
 }
 
-.share-header div {
+.share-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.share-brand > div {
   display: grid;
   gap: 2px;
   min-width: 0;
@@ -223,16 +230,13 @@ button:disabled {
   min-width: 0;
 }
 
-.brand-mark {
-  display: grid;
-  place-items: center;
+.brand-logo {
+  display: block;
   width: 40px;
   height: 40px;
-  border: 1px solid var(--accent-ring);
+  flex: 0 0 auto;
   border-radius: 10px;
-  background: var(--accent-tint);
-  color: var(--accent);
-  font-weight: 800;
+  object-fit: cover;
   box-shadow: var(--shadow-node);
 }
 
@@ -1307,124 +1311,74 @@ button:disabled {
 .group-frame {
   position: absolute;
   z-index: 1;
+  box-sizing: border-box;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.group-frame-box {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1.5px dashed rgba(20, 83, 45, 0.54);
+  border-radius: 14px;
+  background: rgba(187, 247, 208, 0.16);
   pointer-events: none;
 }
 
-.group-frame-brace {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 18px;
+.group-frame.selected .group-frame-box {
+  border-width: 2px;
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
-.group-frame.left .group-frame-brace {
-  left: 0;
-  border-left: 2px solid var(--edge-left);
-  border-radius: 14px 0 0 14px;
-  color: var(--edge-left);
+.group-frame.left .group-frame-box {
+  border-color: color-mix(in srgb, var(--edge-left) 64%, transparent);
+  background: color-mix(in srgb, var(--edge-left) 12%, transparent);
 }
 
-.group-frame.right .group-frame-brace {
-  right: 0;
-  border-right: 2px solid var(--edge-right);
-  border-radius: 0 14px 14px 0;
-  color: var(--edge-right);
-}
-
-.group-frame-brace::before,
-.group-frame-brace::after {
-  position: absolute;
-  width: 18px;
-  content: "";
-}
-
-.group-frame.left .group-frame-brace::before,
-.group-frame.left .group-frame-brace::after {
-  left: 0;
-  border-top: 2px solid var(--edge-left);
-}
-
-.group-frame.right .group-frame-brace::before,
-.group-frame.right .group-frame-brace::after {
-  right: 0;
-  border-top: 2px solid var(--edge-right);
-}
-
-.group-frame-brace::before {
-  top: 0;
-}
-
-.group-frame-brace::after {
-  bottom: 0;
+.group-frame.right .group-frame-box {
+  border-color: color-mix(in srgb, var(--edge-right) 64%, transparent);
+  background: color-mix(in srgb, var(--edge-right) 12%, transparent);
 }
 
 .group-frame-note {
   position: absolute;
-  top: 50%;
-  max-width: 160px;
+  left: 50%;
+  top: 0;
+  z-index: 2;
+  box-sizing: border-box;
   min-height: 24px;
-  overflow: hidden;
-  padding: 0 6px 3px;
-  border: 0;
-  border-bottom: 2px solid currentColor;
-  border-radius: 0;
-  background: transparent;
+  overflow: visible;
+  padding: 6px 14px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: var(--chrome-bg);
   font-size: 12px;
   font-weight: 700;
-  text-overflow: ellipsis;
-  transform: translateY(-50%);
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-align: center;
+  transform: translateX(-50%);
+  white-space: normal;
   pointer-events: auto;
 }
 
-.group-frame-note::before {
-  position: absolute;
-  bottom: -2px;
-  width: 18px;
-  border-bottom: 2px solid currentColor;
-  content: "";
+.group-frame-note-input {
+  display: block;
+  min-width: 0;
+  resize: none;
+  outline: 0;
+  color: inherit;
+  font: inherit;
 }
 
 .group-frame.left .group-frame-note {
-  left: 18px;
   color: var(--edge-left);
 }
 
-.group-frame.left .group-frame-note::before {
-  left: -18px;
-}
-
 .group-frame.right .group-frame-note {
-  right: 18px;
   color: var(--edge-right);
-}
-
-.group-frame.right .group-frame-note::before {
-  right: -18px;
-}
-
-.group-frame-delete {
-  position: absolute;
-  top: calc(50% + 18px);
-  display: grid;
-  place-items: center;
-  width: 20px;
-  min-height: 20px;
-  padding: 0;
-  border-color: var(--border);
-  border-radius: 50%;
-  background: var(--chrome-bg);
-  color: var(--muted);
-  pointer-events: auto;
-  transform: translateY(-50%);
-}
-
-.group-frame.left .group-frame-delete {
-  left: 24px;
-}
-
-.group-frame.right .group-frame-delete {
-  right: 24px;
 }
 
 .note-bubble.hover {
@@ -1438,7 +1392,7 @@ button:disabled {
   visibility: hidden;
 }
 
-.mind-node:hover .note-bubble.hover,
+.note-dot:hover ~ .note-bubble.hover,
 .note-bubble.hover:hover {
   opacity: 1;
   pointer-events: auto;

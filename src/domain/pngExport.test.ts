@@ -76,6 +76,25 @@ describe("layoutTree", () => {
     expect(first && second ? second.y - (first.y + first.height) : undefined).toBe(24);
   });
 
+  it("adds requested top reserve before a framed sibling subtree", () => {
+    const root: MindNode = {
+      id: "root",
+      title: "Root",
+      note: "",
+      level: 1,
+      children: [
+        { id: "first", title: "First", note: "", level: 2, side: "right", children: [] },
+        { id: "second", title: "Second", note: "", level: 2, side: "right", children: [] },
+      ],
+    };
+
+    const byId = new Map(layoutTree(root, { topReserves: new Map([["second", 72]]) }).map((entry) => [entry.node.id, entry]));
+    const first = byId.get("first");
+    const second = byId.get("second");
+
+    expect(first && second ? second.y - (first.y + first.height) : undefined).toBe(96);
+  });
+
   it("uses a shorter horizontal step for text-only descendants after first-level nodes", () => {
     const root: MindNode = {
       id: "root",

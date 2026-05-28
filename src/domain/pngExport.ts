@@ -8,6 +8,10 @@ export interface PositionedNode {
   height: number;
 }
 
+export interface LayoutOptions {
+  topReserves?: ReadonlyMap<string, number>;
+}
+
 export const NODE_WIDTH = 270;
 export const NODE_MIN_WIDTH = 96;
 export const NODE_AUTO_MAX_WIDTH = 420;
@@ -31,10 +35,10 @@ const PADDING = 80;
 export const EXPORT_FONT_FAMILY = '"Times New Roman", "Microsoft YaHei", serif';
 type TextMeasureContext = Pick<CanvasRenderingContext2D, "measureText">;
 
-export function layoutTree(root: MindNode): PositionedNode[] {
+export function layoutTree(root: MindNode, options: LayoutOptions = {}): PositionedNode[] {
   const rootHeight = getNodeLayoutHeight(root, 0);
-  const right = layoutBranch(root, root.children.filter((child) => child.side !== "left"), 1);
-  const left = layoutBranch(root, root.children.filter((child) => child.side === "left"), -1);
+  const right = layoutBranch(root, root.children.filter((child) => child.side !== "left"), 1, options);
+  const left = layoutBranch(root, root.children.filter((child) => child.side === "left"), -1, options);
   const normalizedRight = right.map((entry) => ({
     node: entry.node,
     x: entry.x,
@@ -57,18 +61,21 @@ export function layoutTree(root: MindNode): PositionedNode[] {
   ];
 }
 
-function layoutBranch(root: MindNode, children: MindNode[], direction: 1 | -1): PositionedNode[] & { height: number; anchorY: number } {
+function layoutBranch(root: MindNode, children: MindNode[], direction: 1 | -1, options: LayoutOptions): PositionedNode[] & { height: number; anchorY: number } {
   const positioned: PositionedNode[] = [];
   const anchors: number[] = [];
   let cursorY = 0;
   const rootWidth = getNodeLayoutWidth(root, 0);
 
   children.forEach((child) => {
+    if (cursorY > 0) {
+      cursorY += options.topReserves?.get(child.id) ?? 0;
+    }
     const childWidth = getNodeLayoutWidth(child, 1);
     const childX = direction === 1
       ? rootWidth + ROOT_CONNECTOR_GAP
       : -ROOT_CONNECTOR_GAP - childWidth;
-    const subtree = layoutSubtree(child, direction, 1, childX);
+    const subtree = layoutSubtree(child, direction, 1, childX, options);
     subtree.entries.forEach((entry) => {
       positioned.push({ ...entry, y: entry.y + cursorY });
     });
@@ -87,7 +94,7 @@ interface SubtreeLayout {
   rootCenterY: number;
 }
 
-function layoutSubtree(node: MindNode, direction: 1 | -1, depth: number, x: number): SubtreeLayout {
+function layoutSubtree(node: MindNode, direction: 1 | -1, depth: number, x: number, options: LayoutOptions): SubtreeLayout {
   const height = getNodeLayoutHeight(node, depth);
   if (node.children.length === 0) {
     return {
@@ -102,11 +109,14 @@ function layoutSubtree(node: MindNode, direction: 1 | -1, depth: number, x: numb
   let cursorY = 0;
 
   node.children.forEach((child) => {
+    if (cursorY > 0) {
+      cursorY += options.topReserves?.get(child.id) ?? 0;
+    }
     const childWidth = getNodeLayoutWidth(child, depth + 1);
     const childX = direction === 1
       ? x + getNodeLayoutWidth(node, depth) + TEXT_CONNECTOR_GAP
       : x - TEXT_CONNECTOR_GAP - childWidth;
-    const childLayout = layoutSubtree(child, direction, depth + 1, childX);
+    const childLayout = layoutSubtree(child, direction, depth + 1, childX, options);
     childLayout.entries.forEach((entry) => {
       childEntries.push({ ...entry, y: entry.y + cursorY });
     });

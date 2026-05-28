@@ -15,10 +15,12 @@ interface ToolbarProps {
 }
 
 export function Toolbar(props: ToolbarProps) {
+  const logoSrc = `${import.meta.env.BASE_URL}openmind-logo.png`;
+
   return (
     <header className="toolbar">
       <div className="brand">
-        <div className="brand-mark">O</div>
+        <img className="brand-logo" src={logoSrc} alt="" />
         <div>
           <strong>OpenMind</strong>
           <span>Markdown mind maps</span>
