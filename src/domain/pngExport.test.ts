@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateNodeHeight, EXPORT_FONT_FAMILY, layoutTree, wrapCanvasTextLines } from "./pngExport";
+import { calculateNodeHeight, estimateTextNodeWidth, EXPORT_FONT_FAMILY, getNodeLayoutWidth, layoutTree, NODE_AUTO_MAX_WIDTH, NODE_MAX_WIDTH, NODE_WIDTH, wrapCanvasTextLines } from "./pngExport";
 import pngExportSource from "./pngExport.ts?raw";
 import type { MindNode } from "./types";
 
@@ -57,10 +57,118 @@ describe("layoutTree", () => {
       .toBe(rootEntry ? rootEntry.y + rootEntry.height / 2 : undefined);
   });
 
+  it("keeps vertical spacing between sibling components compact", () => {
+    const root: MindNode = {
+      id: "root",
+      title: "Root",
+      note: "",
+      level: 1,
+      children: [
+        { id: "first", title: "First", note: "", level: 2, side: "right", children: [] },
+        { id: "second", title: "Second", note: "", level: 2, side: "right", children: [] },
+      ],
+    };
+
+    const byId = new Map(layoutTree(root).map((entry) => [entry.node.id, entry]));
+    const first = byId.get("first");
+    const second = byId.get("second");
+
+    expect(first && second ? second.y - (first.y + first.height) : undefined).toBe(24);
+  });
+
+  it("uses a shorter horizontal step for text-only descendants after first-level nodes", () => {
+    const root: MindNode = {
+      id: "root",
+      title: "Root",
+      note: "",
+      level: 1,
+      children: [
+        {
+          id: "section",
+          title: "Section",
+          note: "",
+          level: 2,
+          side: "right",
+          children: [
+            {
+              id: "component",
+              title: "Component",
+              note: "",
+              level: 3,
+              side: "right",
+              children: [
+                { id: "leaf", title: "Leaf", note: "", level: 4, side: "right", children: [] },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const byId = new Map(layoutTree(root).map((entry) => [entry.node.id, entry]));
+    const section = byId.get("section");
+    const component = byId.get("component");
+    const leaf = byId.get("leaf");
+
+    expect(section && component ? component.x - section.x : undefined).toBe(NODE_WIDTH + 28);
+    expect(component && leaf ? leaf.x - component.x : undefined).toBeCloseTo(estimateTextNodeWidth("Component") + 28);
+  });
+
+  it("keeps two-character text labels wide enough for one line plus side padding", () => {
+    expect(estimateTextNodeWidth("测试")).toBe(46);
+  });
+
+  it("grows framed node width with text up to the automatic wrapping width", () => {
+    const shortNode: MindNode = {
+      id: "short",
+      title: "短标题",
+      note: "",
+      level: 2,
+      children: [],
+    };
+    const mediumNode: MindNode = {
+      id: "medium",
+      title: "这是一个明显更长一点的一级组件标题展示宽度",
+      note: "",
+      level: 2,
+      children: [],
+    };
+    const veryLongNode: MindNode = {
+      id: "long",
+      title: "这是一个特别特别长的一级组件标题，用来确认自动宽度到达上限之后会通过换行增加高度",
+      note: "",
+      level: 2,
+      children: [],
+    };
+
+    expect(getNodeLayoutWidth(shortNode, 1)).toBe(NODE_WIDTH);
+    expect(getNodeLayoutWidth(mediumNode, 1)).toBeGreaterThan(NODE_WIDTH);
+    expect(getNodeLayoutWidth(veryLongNode, 1)).toBe(NODE_AUTO_MAX_WIDTH);
+    expect(calculateNodeHeight(veryLongNode, 1, NODE_AUTO_MAX_WIDTH)).toBeGreaterThan(calculateNodeHeight(shortNode, 1, NODE_WIDTH));
+  });
+
+  it("allows manual node width to exceed the automatic wrapping width while keeping a hard resize cap", () => {
+    const manuallySizedNode: MindNode = {
+      id: "manual",
+      title: "Manual size",
+      note: "",
+      level: 2,
+      size: { width: NODE_AUTO_MAX_WIDTH + 120, height: 90 },
+      children: [],
+    };
+    const overSizedNode: MindNode = {
+      ...manuallySizedNode,
+      size: { width: NODE_MAX_WIDTH + 100, height: 90 },
+    };
+
+    expect(getNodeLayoutWidth(manuallySizedNode, 1)).toBe(NODE_AUTO_MAX_WIDTH + 120);
+    expect(getNodeLayoutWidth(overSizedNode, 1)).toBe(NODE_MAX_WIDTH);
+  });
+
   it("increases node height for long titles", () => {
     expect(calculateNodeHeight({
       id: "long",
-      title: "完整开发流程：使用 Codex 开发一个思维导图软件",
+      title: "完整开发流程：使用 Codex 开发一个思维导图软件并持续优化布局交互和导出效果",
       note: "",
       level: 2,
       children: [],

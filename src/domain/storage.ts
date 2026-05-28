@@ -1,4 +1,5 @@
 import { createDefaultDocument } from "./markdown";
+import { DEFAULT_THEME_ID, getThemePreset } from "./themes";
 import type { PersistedState, WebDavConfig } from "./types";
 
 const STORAGE_KEY = "openmind:v1";
@@ -13,6 +14,8 @@ export function createEmptyWebDavConfig(): WebDavConfig {
     serverUrl: "",
     username: "",
     remoteDir: "",
+    publicShareBaseUrl: "",
+    publicShareProvider: "direct",
     rememberCredentials: false,
     password: "",
   };
@@ -51,6 +54,8 @@ export function loadPersistedState(storage: StorageAdapter = window.localStorage
     activeDocumentId: defaultDocument.id,
     backups: [],
     webDavConfig: createEmptyWebDavConfig(),
+    themeId: DEFAULT_THEME_ID,
+    sharePublications: [],
   };
 
   const raw = storage.getItem(STORAGE_KEY);
@@ -80,6 +85,8 @@ export function loadPersistedState(storage: StorageAdapter = window.localStorage
         ...webDavConfig,
         password: decodeSecret(webDavConfig.password),
       },
+      themeId: getThemePreset(parsed.themeId).id,
+      sharePublications: parsed.sharePublications ?? [],
     };
   } catch {
     return fallback;

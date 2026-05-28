@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createDefaultDocument } from "./markdown";
 import { createBackup } from "./sync";
 import { createEmptyWebDavConfig, loadPersistedState, savePersistedState } from "./storage";
+import { DEFAULT_THEME_ID } from "./themes";
 
 describe("storage helpers", () => {
   it("returns a default document when localStorage has no saved state", () => {
@@ -14,6 +15,7 @@ describe("storage helpers", () => {
     expect(state.document.root.title).toBe("OpenMind");
     expect(state.backups).toEqual([]);
     expect(state.webDavConfig).toEqual(createEmptyWebDavConfig());
+    expect(state.themeId).toBe(DEFAULT_THEME_ID);
   });
 
   it("saves and reloads document state, backups, and obfuscated remembered WebDAV credentials", () => {
@@ -28,6 +30,7 @@ describe("storage helpers", () => {
     savePersistedState(adapter, {
       document,
       backups: [backup],
+      themeId: "violet-orchid",
       webDavConfig: {
         serverUrl: "https://dav.example.com",
         username: "alice",
@@ -44,6 +47,7 @@ describe("storage helpers", () => {
     expect(loaded.document.root.title).toBe("Saved");
     expect(loaded.backups[0].markdown).toBe("# Old");
     expect(loaded.webDavConfig.password).toBe("secret");
+    expect(loaded.themeId).toBe("violet-orchid");
   });
 
   it("drops the password when credentials are not remembered", () => {
@@ -56,6 +60,7 @@ describe("storage helpers", () => {
     savePersistedState(adapter, {
       document: createDefaultDocument("UnsavedSecret"),
       backups: [],
+      themeId: DEFAULT_THEME_ID,
       webDavConfig: {
         serverUrl: "https://dav.example.com",
         username: "alice",

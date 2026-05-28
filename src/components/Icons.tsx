@@ -33,6 +33,29 @@ export function PlusIcon(props: IconProps) {
   );
 }
 
+export function NewDocumentIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 3v5h5" />
+      <path d="M9 14h6" />
+      <path d="M9 17h4" />
+    </IconBase>
+  );
+}
+
+export function ZoomInArrowIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <circle cx="10.5" cy="10.5" r="5.5" />
+      <path d="m15 15 5 5" />
+      <path d="M9 12 12 9" />
+      <path d="M12 9v3" />
+      <path d="M12 9H9" />
+    </IconBase>
+  );
+}
+
 export function MinusIcon(props: IconProps) {
   return (
     <IconBase {...props}>
@@ -77,6 +100,18 @@ export function SettingsIcon(props: IconProps) {
     <IconBase {...props}>
       <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
       <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.3a2 2 0 1 1-4 0V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 1 1 4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H2.7a2 2 0 1 1 0-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7A2 2 0 1 1 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6v-.3a2 2 0 1 1 4 0V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.3a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z" />
+    </IconBase>
+  );
+}
+
+export function PaletteIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M12 3a9 9 0 0 0 0 18h1.5a1.8 1.8 0 0 0 1.2-3.2 1.8 1.8 0 0 1 1.2-3.2H17a4 4 0 0 0 4-4.2C20.8 6.3 17.1 3 12 3Z" />
+      <circle cx="7.5" cy="10" r="0.8" />
+      <circle cx="10" cy="7.5" r="0.8" />
+      <circle cx="14" cy="7.8" r="0.8" />
+      <circle cx="16.6" cy="10.8" r="0.8" />
     </IconBase>
   );
 }
@@ -139,14 +174,18 @@ export function XIcon(props: IconProps) {
   );
 }
 
-export function FitIcon(props: IconProps) {
+export function AutoLayoutIcon(props: IconProps) {
   return (
     <IconBase {...props}>
-      <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-      <path d="M16 3h3a2 2 0 0 1 2 2v3" />
-      <path d="M21 16v3a2 2 0 0 1-2 2h-3" />
-      <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
-      <path d="M9 9h6v6H9z" />
+      <rect height="4" rx="1.2" width="6" x="9" y="3" />
+      <rect height="4" rx="1.2" width="6" x="4" y="10" />
+      <rect height="4" rx="1.2" width="6" x="14" y="10" />
+      <rect height="4" rx="1.2" width="6" x="9" y="17" />
+      <path d="M12 7v3" />
+      <path d="M10 12h4" />
+      <path d="M12 14v3" />
+      <path d="M2 12h2" />
+      <path d="M20 12h2" />
     </IconBase>
   );
 }
@@ -176,15 +215,59 @@ export function FrameIcon(props: IconProps) {
   );
 }
 
+export function AddChildNodeIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <circle cx="7" cy="7" r="2.5" />
+      <circle cx="17" cy="17" r="2.5" />
+      <path d="M9.5 7H13a4 4 0 0 1 4 4v3.5" />
+    </IconBase>
+  );
+}
+
+export function AddSiblingNodeIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <circle cx="7" cy="12" r="2.5" />
+      <circle cx="17" cy="12" r="2.5" />
+      <path d="M9.5 12h5" />
+    </IconBase>
+  );
+}
+
+export function AddParentNodeIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <circle cx="7" cy="17" r="2.5" />
+      <circle cx="17" cy="7" r="2.5" />
+      <path d="M9.5 17H13a4 4 0 0 0 4-4V9.5" />
+    </IconBase>
+  );
+}
+
 export function FocusIcon(props: IconProps) {
   return (
     <IconBase {...props}>
-      <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-      <path d="M16 3h3a2 2 0 0 1 2 2v3" />
-      <path d="M21 16v3a2 2 0 0 1-2 2h-3" />
-      <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
-      <path d="M12 8v8" />
-      <path d="M8 12h8" />
+      <path d="M8 3H4a1 1 0 0 0-1 1v4" />
+      <path d="M16 3h4a1 1 0 0 1 1 1v4" />
+      <path d="M21 16v4a1 1 0 0 1-1 1h-4" />
+      <path d="M8 21H4a1 1 0 0 1-1-1v-4" />
+      <path d="m8 8-5-5" />
+      <path d="m16 8 5-5" />
+      <path d="m16 16 5 5" />
+      <path d="m8 16-5 5" />
+    </IconBase>
+  );
+}
+
+export function ShareIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="m8.6 10.5 6.8-4" />
+      <path d="m8.6 13.5 6.8 4" />
     </IconBase>
   );
 }
@@ -207,16 +290,11 @@ export function StatusDotIcon(props: IconProps) {
 
 export function NoteDotIcon(props: IconProps) {
   return (
-    <svg
-      aria-hidden="true"
-      className="note-dot-icon"
-      fill="currentColor"
-      height={8}
-      viewBox="0 0 8 8"
-      width={8}
-      {...props}
-    >
-      <circle cx="4" cy="4" r="3" />
-    </svg>
+    <IconBase className="note-dot-icon" size={14} {...props}>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 3v5h5" />
+      <path d="M8.5 13h6.5" />
+      <path d="M8.5 16h4.5" />
+    </IconBase>
   );
 }

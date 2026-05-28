@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MindNode } from "./types";
-import { addChildNode, addSiblingNode, collectSubtreeIds, deleteNode, deleteNodes, moveSubtree, updateNodeNote, updateNodeTitle } from "./tree";
+import { addChildNode, addParentNode, addSiblingNode, collectSubtreeIds, deleteNode, deleteNodes, moveSubtree, updateNodeNote, updateNodeTitle } from "./tree";
 
 function fixture(): MindNode {
   return {
@@ -58,6 +58,29 @@ describe("tree editing helpers", () => {
 
     expect(root.children.map((node) => node.title)).toEqual(["A", "B", "Main topic"]);
     expect(root.children[2].level).toBe(2);
+  });
+
+  it("inserts a new parent above a selected node while preserving the subtree", () => {
+    const root = addParentNode(fixture(), "a1", "Parent", "parent");
+
+    expect(root.children[0].children.map((node) => node.id)).toEqual(["parent"]);
+    expect(root.children[0].children[0]).toMatchObject({
+      id: "parent",
+      title: "Parent",
+      level: 3,
+      children: [
+        {
+          id: "a1",
+          level: 4,
+        },
+      ],
+    });
+  });
+
+  it("ignores adding a parent above the root", () => {
+    const original = fixture();
+
+    expect(addParentNode(original, "root", "Parent")).toBe(original);
   });
 
   it("updates titles and notes immutably", () => {

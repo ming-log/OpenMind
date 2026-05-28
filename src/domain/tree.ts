@@ -59,6 +59,33 @@ export function addSiblingNode(root: MindNode, targetId: string, title = "New no
   return insertBelow(root);
 }
 
+export function addParentNode(root: MindNode, targetId: string, title = "New node", nodeId?: string): MindNode {
+  if (root.id === targetId) {
+    return root;
+  }
+
+  function insertAbove(node: MindNode): MindNode {
+    const children = node.children.map((child) => {
+      if (child.id !== targetId) {
+        return insertAbove(child);
+      }
+
+      const nextParent = createEmptyNode(child.level, title, nodeId, child.side);
+      return {
+        ...nextParent,
+        children: [relevelSubtree(child, Math.min(child.level + 1, 6), child.side)],
+      };
+    });
+
+    return {
+      ...node,
+      children,
+    };
+  }
+
+  return insertAbove(root);
+}
+
 export function updateNodeTitle(root: MindNode, nodeId: string, title: string): MindNode {
   return mapNode(root, nodeId, (node) => ({
     ...node,
@@ -70,6 +97,16 @@ export function updateNodeNote(root: MindNode, nodeId: string, note: string): Mi
   return mapNode(root, nodeId, (node) => ({
     ...node,
     note,
+  }));
+}
+
+export function updateNodeSize(root: MindNode, nodeId: string, size: NonNullable<MindNode["size"]>): MindNode {
+  return mapNode(root, nodeId, (node) => ({
+    ...node,
+    size: {
+      width: Math.round(size.width),
+      height: Math.round(size.height),
+    },
   }));
 }
 

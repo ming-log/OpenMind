@@ -1,4 +1,7 @@
+import type { ThemeId } from "./themes";
+
 export type SaveStatus = "saved" | "dirty" | "syncing" | "syncFailed";
+export type { ThemeId } from "./themes";
 
 export interface MindNode {
   id: string;
@@ -6,6 +9,10 @@ export interface MindNode {
   note: string;
   level: number;
   side?: "left" | "right";
+  size?: {
+    width: number;
+    height: number;
+  };
   children: MindNode[];
 }
 
@@ -46,8 +53,18 @@ export interface WebDavConfig {
   serverUrl: string;
   username: string;
   remoteDir: string;
+  publicShareBaseUrl?: string;
+  publicShareProvider?: "direct" | "openlist";
   rememberCredentials: boolean;
   password?: string;
+}
+
+export interface SharePublication {
+  documentId: string;
+  fileName: string;
+  remoteUrl: string;
+  updatedAt?: string;
+  error?: string;
 }
 
 export interface PersistedState {
@@ -56,4 +73,6 @@ export interface PersistedState {
   activeDocumentId?: string;
   backups: BackupEntry[];
   webDavConfig: WebDavConfig;
+  themeId: ThemeId;
+  sharePublications?: SharePublication[];
 }

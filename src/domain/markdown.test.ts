@@ -130,4 +130,43 @@ Child note.
       note: "Visible note.",
     });
   });
+
+  it("persists OpenMind node size metadata through Markdown without adding it to notes", () => {
+    const document = createDefaultDocument("Root");
+    document.root.children.push({
+      id: "sized-child",
+      title: "Sized child",
+      note: "Visible note.",
+      level: 2,
+      size: { width: 240, height: 96 },
+      children: [],
+    });
+
+    const markdown = serializeMarkdown(document.root);
+    const parsed = parseMarkdown(markdown, "Root.md");
+
+    expect(markdown).toContain("<!-- openmind:size=240x96 -->");
+    expect(parsed.root.children[0]).toMatchObject({
+      title: "Sized child",
+      size: { width: 240, height: 96 },
+      note: "Visible note.",
+    });
+  });
+
+  it("persists manual title line breaks in heading text", () => {
+    const document = createDefaultDocument("Root");
+    document.root.children.push({
+      id: "multi-line-child",
+      title: "First line\nSecond line",
+      note: "",
+      level: 2,
+      children: [],
+    });
+
+    const markdown = serializeMarkdown(document.root);
+    const parsed = parseMarkdown(markdown, "Root.md");
+
+    expect(markdown).toContain("## First line<br>Second line");
+    expect(parsed.root.children[0].title).toBe("First line\nSecond line");
+  });
 });

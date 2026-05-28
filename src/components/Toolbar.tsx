@@ -1,5 +1,5 @@
 import type { SaveStatus } from "../domain/types";
-import { DownloadIcon, FileTextIcon, MapIcon, PlusIcon, RefreshIcon, SettingsIcon, UploadIcon } from "./Icons";
+import { DownloadIcon, FileTextIcon, MapIcon, NewDocumentIcon, RefreshIcon, SettingsIcon, ShareIcon, UploadIcon } from "./Icons";
 
 interface ToolbarProps {
   mode: "map" | "markdown";
@@ -8,6 +8,7 @@ interface ToolbarProps {
   onImport: () => void;
   onExportMarkdown: () => void;
   onExportPng: () => void;
+  onShare: () => void;
   onSync: () => void;
   onModeChange: (mode: "map" | "markdown") => void;
   onOpenSettings: () => void;
@@ -24,7 +25,7 @@ export function Toolbar(props: ToolbarProps) {
         </div>
       </div>
       <nav className="tool-actions" aria-label="Primary actions">
-        <button onClick={props.onNew} title="新建" type="button"><PlusIcon /></button>
+        <button onClick={props.onNew} title="新建" type="button"><NewDocumentIcon /></button>
         <button onClick={props.onImport} title="导入 Markdown" type="button"><UploadIcon /></button>
         <button className="tool-export" onClick={props.onExportMarkdown} title="导出 Markdown" type="button">
           <DownloadIcon />
@@ -34,6 +35,7 @@ export function Toolbar(props: ToolbarProps) {
           <DownloadIcon />
           <span>PNG</span>
         </button>
+        <button onClick={props.onShare} title="生成动态只读分享" type="button"><ShareIcon /></button>
         <button onClick={props.onSync} disabled={props.status === "syncing"} title="同步" type="button"><RefreshIcon /></button>
       </nav>
       <div className="mode-switch" aria-label="Editor mode" data-mode={props.mode}>

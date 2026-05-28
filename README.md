@@ -53,8 +53,10 @@ In that mode, edit the local document first, sync, and the mock should log a `PU
 - Right-click a node for add, edit title, edit note, and delete.
 - Delete confirmation removes the selected node and all descendants.
 - Ctrl-drag box-selects multiple nodes for batch deletion; holding Space temporarily pans the canvas from anywhere without changing zoom.
-- Pan, zoom, and focus the selected node.
+- Use the mouse wheel without modifier keys to move the mind map vertically without changing zoom; use Ctrl+wheel to zoom at the pointer.
+- Pan, zoom, focus the selected node, and resize nodes from their border handles.
 - Hover or click nodes with notes to show note bubbles.
+- Generate a dynamic read-only share link backed by WebDAV. Uploads use your WebDAV credentials, while viewers read a public/guest URL for the same JSON file; OpenList shares can POST `/api/fs/get` and read the returned `raw_url`.
 - Note bubbles render basic Markdown: paragraphs, lists, bold, emphasis, and inline code.
 - Export the complete mind map as PNG.
 - Persist the latest document in browser local storage.

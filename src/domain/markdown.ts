@@ -10,9 +10,18 @@ interface HeadingToken {
 export const MULTIPLE_H1_NORMALIZED_WARNING = "Markdown has multiple H1 headings; wrapped them under 根主题.";
 
 const SIDE_MARKER_PATTERN = /^<!--\s*openmind:side=(left|right)\s*-->\s*$/;
+const SIZE_MARKER_PATTERN = /^<!--\s*openmind:size=(\d+)x(\d+)\s*-->\s*$/;
 
 function titleFromFileName(fileName: string): string {
   return fileName.replace(/\.[^.]+$/, "").trim() || "OpenMind";
+}
+
+function decodeHeadingTitle(title: string): string {
+  return title.replace(/<br\s*\/?>/gi, "\n");
+}
+
+function encodeHeadingTitle(title: string): string {
+  return (title.trim() || "Untitled").replace(/\r\n?/g, "\n").replace(/\n/g, "<br>");
 }
 
 function normalizeNote(lines: string[]): string {
@@ -24,16 +33,22 @@ function headingToNode(token: HeadingToken, index: number): MindNode {
   const side = sideMarkerIndex >= 0
     ? SIDE_MARKER_PATTERN.exec(token.body[sideMarkerIndex].trim())?.[1] as MindNode["side"]
     : undefined;
-  const noteLines = sideMarkerIndex >= 0
-    ? token.body.filter((_, lineIndex) => lineIndex !== sideMarkerIndex)
-    : token.body;
+  const sizeMarkerLine = token.body.find((line) => SIZE_MARKER_PATTERN.test(line.trim()));
+  const sizeMatch = sizeMarkerLine ? SIZE_MARKER_PATTERN.exec(sizeMarkerLine.trim()) : null;
+  const size = sizeMatch
+    ? { width: Number(sizeMatch[1]), height: Number(sizeMatch[2]) }
+    : undefined;
+  const noteLines = token.body.filter((line, lineIndex) => (
+    lineIndex !== sideMarkerIndex && !SIZE_MARKER_PATTERN.test(line.trim())
+  ));
 
   return {
     id: createStableTestId("md", index),
-    title: token.title || "Untitled",
+    title: decodeHeadingTitle(token.title) || "Untitled",
     note: normalizeNote(noteLines),
     level: token.level,
     side,
+    size,
     children: [],
   };
 }
@@ -135,9 +150,12 @@ export function serializeMarkdown(root: MindNode): string {
 
   function visit(node: MindNode): void {
     const level = Math.min(Math.max(node.level, 1), 6);
-    lines.push(`${"#".repeat(level)} ${node.title.trim() || "Untitled"}`, "");
+    lines.push(`${"#".repeat(level)} ${encodeHeadingTitle(node.title)}`, "");
     if (node.side) {
       lines.push(`<!-- openmind:side=${node.side} -->`, "");
+    }
+    if (node.size) {
+      lines.push(`<!-- openmind:size=${Math.round(node.size.width)}x${Math.round(node.size.height)} -->`, "");
     }
     const note = node.note.trim();
     if (note) {
