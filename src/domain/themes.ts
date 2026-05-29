@@ -17,6 +17,11 @@ export interface ThemeExportNodePalette {
   text: string;
 }
 
+export interface BranchPalette {
+  node: ThemeExportNodePalette;
+  edge: string;
+}
+
 export interface ThemeExportPalette {
   canvas: string;
   grid: string;
@@ -29,6 +34,7 @@ export interface ThemeExportPalette {
   node: ThemeExportNodePalette;
   nodeLeft: ThemeExportNodePalette;
   nodeRight: ThemeExportNodePalette;
+  branches: readonly BranchPalette[];
 }
 
 export interface ThemePreset {
@@ -36,6 +42,7 @@ export interface ThemePreset {
   name: string;
   swatches: readonly string[];
   cssVars: Record<string, string>;
+  branches: readonly BranchPalette[];
   exportPalette: ThemeExportPalette;
 }
 
@@ -70,6 +77,7 @@ interface ThemeInput {
   node: ThemeExportNodePalette;
   nodeLeft?: ThemeExportNodePalette;
   nodeRight?: ThemeExportNodePalette;
+  branches?: readonly BranchPalette[];
 }
 
 export const DEFAULT_THEME_ID: ThemeId = "sage-mint";
@@ -93,11 +101,13 @@ function createTheme(input: ThemeInput): ThemePreset {
   const edgeRight = input.edgeRight ?? input.edge;
   const nodeLeft = input.nodeLeft ?? input.node;
   const nodeRight = input.nodeRight ?? input.node;
+  const branches = input.branches ?? [{ node: input.node, edge: input.edge }];
 
   return {
     id: input.id,
     name: input.name,
     swatches: input.swatches,
+    branches,
     cssVars: {
       "--canvas": input.canvas,
       "--canvas-grid": input.grid,
@@ -149,6 +159,7 @@ function createTheme(input: ThemeInput): ThemePreset {
       node: input.node,
       nodeLeft,
       nodeRight,
+      branches,
     },
   };
 }
@@ -181,6 +192,11 @@ export const THEME_PRESETS: readonly ThemePreset[] = [
     edge: "#6aa9a7",
     root: { bg: "#163b3b", border: "#163b3b", text: "#f7fffb" },
     node: { bg: "#9dd4c1", border: "#72b79f", text: "#18352f" },
+    branches: [
+      { node: { bg: "#2f5d5c", border: "#214746", text: "#eafff8" }, edge: "#1f4a49" },
+      { node: { bg: "#9dd4c1", border: "#72b79f", text: "#18352f" }, edge: "#6aa9a7" },
+      { node: { bg: "#6cc0b4", border: "#48a99b", text: "#10302c" }, edge: "#49a394" },
+    ],
   }),
   createTheme({
     id: "warm-ember",
@@ -213,6 +229,11 @@ export const THEME_PRESETS: readonly ThemePreset[] = [
     node: { bg: "#b95a48", border: "#9d4639", text: "#fff9f3" },
     nodeLeft: { bg: "#dbe7ee", border: "#8fb0c9", text: "#27475a" },
     nodeRight: { bg: "#b95a48", border: "#9d4639", text: "#fff9f3" },
+    branches: [
+      { node: { bg: "#aebfd0", border: "#8fb0c9", text: "#23384a" }, edge: "#7da0bf" },
+      { node: { bg: "#b95a48", border: "#9d4639", text: "#fff9f3" }, edge: "#be6a58" },
+      { node: { bg: "#aebfd0", border: "#8fb0c9", text: "#23384a" }, edge: "#7da0bf" },
+    ],
   }),
   createTheme({
     id: "violet-orchid",
@@ -329,6 +350,11 @@ export const THEME_PRESETS: readonly ThemePreset[] = [
     node: { bg: "#f28f34", border: "#da7830", text: "#351d0d" },
     nodeLeft: { bg: "#86aaf2", border: "#668ee0", text: "#132b5c" },
     nodeRight: { bg: "#f28f34", border: "#da7830", text: "#351d0d" },
+    branches: [
+      { node: { bg: "#9fbdf6", border: "#7ba0e8", text: "#16306a" }, edge: "#789fec" },
+      { node: { bg: "#f28f34", border: "#da7830", text: "#351d0d" }, edge: "#ef8a4e" },
+      { node: { bg: "#f3b4ad", border: "#e79a92", text: "#5a2a25" }, edge: "#ef9f95" },
+    ],
   }),
   createTheme({
     id: "mono-graphite",

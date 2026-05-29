@@ -25,4 +25,26 @@ describe("theme presets", () => {
       expect(theme.exportPalette.nodeRight.bg).toBe(theme.cssVars["--node-right-bg"]);
     }
   });
+
+  it("exposes an ordered branch palette so top-level branches cycle through colors", () => {
+    for (const theme of THEME_PRESETS) {
+      expect(theme.branches.length).toBeGreaterThan(0);
+      expect(theme.branches).toEqual(theme.exportPalette.branches);
+      for (const branch of theme.branches) {
+        expect(branch.edge).toBeTruthy();
+        expect(branch.node.bg).toBeTruthy();
+        expect(branch.node.border).toBeTruthy();
+        expect(branch.node.text).toBeTruthy();
+      }
+    }
+  });
+
+  it("gives multi-color themes more than one branch color", () => {
+    const splitThemeIds = ["sunrise-split", "warm-ember", "sage-mint"] as const;
+    for (const themeId of splitThemeIds) {
+      const theme = getThemePreset(themeId);
+      const uniqueEdges = new Set(theme.branches.map((branch) => branch.edge));
+      expect(uniqueEdges.size).toBeGreaterThan(1);
+    }
+  });
 });

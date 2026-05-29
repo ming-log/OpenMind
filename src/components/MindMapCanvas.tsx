@@ -238,6 +238,21 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
     walk(props.root, 0);
     return depths;
   }, [props.root]);
+  const branchIndexById = useMemo(() => {
+    const branchIndex = new Map<string, number>();
+
+    function walk(node: MindNode, index: number): void {
+      branchIndex.set(node.id, index);
+      node.children.forEach((child) => walk(child, index));
+    }
+
+    props.root.children.forEach((child, index) => walk(child, index));
+    return branchIndex;
+  }, [props.root]);
+  const branchPalettes = useMemo(() => {
+    const theme = props.themes.find((entry) => entry.id === props.themeId) ?? props.themes[0];
+    return theme?.branches ?? [];
+  }, [props.themeId, props.themes]);
   const selectedSet = useMemo(() => new Set(props.selectedIds), [props.selectedIds]);
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 80, y: 80 });
@@ -1100,6 +1115,43 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
     return nodeDepths.get(entry.node.id) ?? Math.max(entry.node.level - 1, 0);
   }
 
+  function getBranchPalette(nodeId: string) {
+    if (!branchPalettes.length) {
+      return undefined;
+    }
+    const branchIndex = branchIndexById.get(nodeId);
+    if (branchIndex === undefined) {
+      return undefined;
+    }
+    return branchPalettes[branchIndex % branchPalettes.length];
+  }
+
+  function getNodeBranchStyle(entry: PositionedNode): CSSProperties {
+    if (entry.node.id === props.root.id) {
+      return {};
+    }
+    const palette = getBranchPalette(entry.node.id);
+    if (!palette) {
+      return {};
+    }
+    const side = getBranchSide(entry);
+    const sideKey = side === "left" ? "left" : "right";
+    return {
+      [`--node-${sideKey}-bg`]: palette.node.bg,
+      [`--node-${sideKey}-border`]: palette.node.border,
+      [`--node-${sideKey}-text`]: palette.node.text,
+      [`--node-bg`]: palette.node.bg,
+      [`--node-border`]: palette.node.border,
+      [`--node-text`]: palette.node.text,
+      [`--edge-${sideKey}`]: palette.edge,
+      [`--edge`]: palette.edge,
+    } as CSSProperties;
+  }
+
+  function getEdgeBranchColor(childEntry: PositionedNode): string | undefined {
+    return getBranchPalette(childEntry.node.id)?.edge;
+  }
+
   function getRenderedNodeHeight(entry: PositionedNode): number {
     if (resizeDraft?.nodeId === entry.node.id) {
       return resizeDraft.height;
@@ -1385,12 +1437,15 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
                 const endX = getConnectorX(childEntry, childIsLeft ? "right" : "left");
                 const endY = getRenderedNodeTop(childEntry) + getRenderedNodeHeight(childEntry) / 2;
                 const midX = (startX + endX) / 2;
+                const isActiveEdge = selectedSet.has(entry.node.id) || selectedSet.has(child.id);
+                const branchEdgeColor = getEdgeBranchColor(childEntry);
                 return (
                   <path
-                    className={selectedSet.has(entry.node.id) || selectedSet.has(child.id) ? "active" : undefined}
+                    className={isActiveEdge ? "active" : undefined}
                     data-branch-side={getBranchSide(childEntry)}
                     key={`${entry.node.id}-${child.id}`}
                     d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`}
+                    style={!isActiveEdge && branchEdgeColor ? { stroke: branchEdgeColor } : undefined}
                   />
                 );
               }),
@@ -1486,6 +1541,7 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
                 maxWidth: NODE_MAX_WIDTH,
                 height: getRenderedNodeHeight(draggedEntry),
                 minHeight: getRenderedNodeMinHeight(draggedEntry),
+                ...getNodeBranchStyle(draggedEntry),
               }}
             >
               <strong>{draggedEntry.node.title}</strong>
@@ -1511,6 +1567,7 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
                 maxWidth: NODE_MAX_WIDTH,
                 height: renderedHeight,
                 minHeight: getRenderedNodeMinHeight(entry),
+                ...getNodeBranchStyle(entry),
               }}
               onClick={(event) => {
                 if (suppressClickRef.current) {

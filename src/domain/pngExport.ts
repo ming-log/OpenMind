@@ -1,4 +1,4 @@
-import { DEFAULT_THEME_ID, getThemePreset, type ThemeExportNodePalette, type ThemeExportPalette, type ThemeId } from "./themes";
+import { DEFAULT_THEME_ID, getThemePreset, type BranchPalette, type ThemeExportNodePalette, type ThemeExportPalette, type ThemeId } from "./themes";
 import type { MindNode } from "./types";
 
 export interface PositionedNode {
@@ -268,6 +268,7 @@ export function exportTreeAsPng(root: MindNode, fileName: string, themeId: Theme
 
   const byId = new Map(nodes.map((entry) => [entry.node.id, entry]));
   const rootEntry = byId.get(root.id) ?? nodes[0];
+  const branchIndexById = getBranchIndices(root);
   context.lineWidth = 2;
   for (const entry of nodes) {
     const entryDepth = nodeDepths.get(entry.node.id) ?? Math.max(entry.node.level - 1, 0);
@@ -284,7 +285,8 @@ export function exportTreeAsPng(root: MindNode, fileName: string, themeId: Theme
       const endX = PADDING + childEntry.x + (childIsLeft ? childWidth : 0);
       const endY = PADDING + childEntry.y + childEntry.height / 2;
       const midX = (startX + endX) / 2;
-      context.strokeStyle = childBranchSide === "left" ? palette.edgeLeft : palette.edgeRight;
+      const branchEdge = getBranchPalette(palette, branchIndexById.get(childEntry.node.id))?.edge;
+      context.strokeStyle = branchEdge ?? (childBranchSide === "left" ? palette.edgeLeft : palette.edgeRight);
       context.beginPath();
       context.moveTo(startX, startY);
       context.bezierCurveTo(midX, startY, midX, endY, endX, endY);
@@ -297,7 +299,7 @@ export function exportTreeAsPng(root: MindNode, fileName: string, themeId: Theme
     const y = PADDING + entry.y;
     const nodeDepth = nodeDepths.get(entry.node.id) ?? Math.max(entry.node.level - 1, 0);
     const framed = entry.node.id === root.id || nodeDepth === 1;
-    const nodePalette = getExportNodePalette(entry, rootEntry, palette);
+    const nodePalette = getExportNodePalette(entry, rootEntry, palette, branchIndexById.get(entry.node.id));
     const nodeWidth = getNodeLayoutWidth(entry.node, nodeDepth);
 
     if (framed) {
@@ -378,14 +380,38 @@ function getNodeDepths(root: MindNode): Map<string, number> {
   return depths;
 }
 
+function getBranchIndices(root: MindNode): Map<string, number> {
+  const branchIndex = new Map<string, number>();
+
+  function walk(node: MindNode, index: number): void {
+    branchIndex.set(node.id, index);
+    node.children.forEach((child) => walk(child, index));
+  }
+
+  root.children.forEach((child, index) => walk(child, index));
+  return branchIndex;
+}
+
+function getBranchPalette(palette: ThemeExportPalette, branchIndex: number | undefined): BranchPalette | undefined {
+  if (branchIndex === undefined || !palette.branches.length) {
+    return undefined;
+  }
+  return palette.branches[branchIndex % palette.branches.length];
+}
+
 function getExportNodePalette(
   entry: PositionedNode,
   rootEntry: PositionedNode,
   palette: ThemeExportPalette,
+  branchIndex?: number,
 ): ThemeExportNodePalette {
   const side = getExportBranchSide(entry, rootEntry);
   if (side === "root") {
     return palette.root;
+  }
+  const branchPalette = getBranchPalette(palette, branchIndex);
+  if (branchPalette) {
+    return branchPalette.node;
   }
   return side === "left" ? palette.nodeLeft : palette.nodeRight;
 }

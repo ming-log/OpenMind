@@ -29,6 +29,7 @@ export function Toolbar(props: ToolbarProps) {
       <nav className="tool-actions" aria-label="Primary actions">
         <button onClick={props.onNew} title="新建" type="button"><NewDocumentIcon /></button>
         <button onClick={props.onImport} title="导入 Markdown" type="button"><UploadIcon /></button>
+        <span className="tool-divider" aria-hidden="true" />
         <button className="tool-export" onClick={props.onExportMarkdown} title="导出 Markdown" type="button">
           <DownloadIcon />
           <span>MD</span>
@@ -37,6 +38,7 @@ export function Toolbar(props: ToolbarProps) {
           <DownloadIcon />
           <span>PNG</span>
         </button>
+        <span className="tool-divider" aria-hidden="true" />
         <button onClick={props.onShare} title="生成动态只读分享" type="button"><ShareIcon /></button>
         <button onClick={props.onSync} disabled={props.status === "syncing"} title="同步" type="button"><RefreshIcon /></button>
       </nav>
