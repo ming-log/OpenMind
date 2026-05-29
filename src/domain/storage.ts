@@ -1,6 +1,6 @@
-import { createDefaultDocument } from "./markdown";
+import { createDefaultDocument, parseMarkdown, serializeMarkdown } from "./markdown";
 import { DEFAULT_THEME_ID, getThemePreset } from "./themes";
-import type { PersistedState, WebDavConfig } from "./types";
+import type { DocumentState, PersistedState, WebDavConfig } from "./types";
 
 const STORAGE_KEY = "openmind:v1";
 
@@ -13,7 +13,7 @@ export function createEmptyWebDavConfig(): WebDavConfig {
   return {
     serverUrl: "",
     username: "",
-    remoteDir: "",
+    remoteDir: "/openmind",
     publicShareBaseUrl: "",
     publicShareProvider: "direct",
     rememberCredentials: false,
@@ -70,11 +70,13 @@ export function loadPersistedState(storage: StorageAdapter = window.localStorage
       ...(parsed.webDavConfig ?? {}),
     };
     const document = parsed.document ?? fallback.document;
-    const documents = (parsed.documents?.length ? parsed.documents : [document]).map((entry, index) => ({
-      ...entry,
-      id: entry.id ?? `task-${index + 1}`,
-      groupFrames: entry.groupFrames ?? [],
-    }));
+    const documents = (parsed.documents?.length ? parsed.documents : [document]).map((entry, index) => (
+      migrateDocumentFrames({
+        ...entry,
+        id: entry.id ?? `task-${index + 1}`,
+        groupFrames: entry.groupFrames ?? [],
+      })
+    ));
     const activeDocumentId = parsed.activeDocumentId ?? document.id ?? documents[0]?.id;
     return {
       document: documents.find((entry) => entry.id === activeDocumentId) ?? documents[0] ?? document,
@@ -91,6 +93,22 @@ export function loadPersistedState(storage: StorageAdapter = window.localStorage
   } catch {
     return fallback;
   }
+}
+
+function migrateDocumentFrames(document: DocumentState): DocumentState {
+  const groupFrames = document.groupFrames ?? [];
+  if (!groupFrames.length || document.markdown.includes("openmind:frames=")) {
+    return { ...document, groupFrames };
+  }
+
+  const markdown = serializeMarkdown(document.root, groupFrames);
+  const parsed = parseMarkdown(markdown, document.fileName);
+  return {
+    ...document,
+    markdown,
+    groupFrames: parsed.groupFrames,
+    lastSavedMarkdown: document.lastSavedMarkdown === document.markdown ? markdown : document.lastSavedMarkdown,
+  };
 }
 
 export function savePersistedState(storage: StorageAdapter = window.localStorage, state: PersistedState): void {

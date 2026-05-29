@@ -724,6 +724,7 @@ function EditorApp() {
       commitDocument({
         ...documentState,
         root: parsed.root,
+        groupFrames: parsed.groupFrames,
         warnings: parsed.warnings,
       });
       setSelectedIds([parsed.root.id]);
@@ -733,12 +734,13 @@ function EditorApp() {
 
   function updateMarkdown(markdown: string): void {
     const parsed = parseMarkdown(markdown, documentState.fileName);
-    commitDocument(markDirty(documentState, markdown, parsed.root, parsed.warnings));
+    commitDocument(markDirty(documentState, markdown, parsed.root, parsed.warnings, parsed.groupFrames));
   }
 
   function updateRoot(nextRoot: DocumentState["root"]): void {
-    const markdown = serializeMarkdown(nextRoot);
-    commitUndoable(markDirty(documentState, markdown, nextRoot, documentState.warnings));
+    const groupFrames = documentState.groupFrames ?? [];
+    const markdown = serializeMarkdown(nextRoot, groupFrames);
+    commitUndoable(markDirty(documentState, markdown, nextRoot, documentState.warnings, groupFrames));
   }
 
   function addChild(parentId: string, side?: "left" | "right"): void {
@@ -787,6 +789,14 @@ function EditorApp() {
     setMessage("已移动节点");
   }
 
+  function commitGroupFrames(groupFrames: GroupFrame[], message?: string): void {
+    const markdown = serializeMarkdown(documentState.root, groupFrames);
+    commitUndoable(markDirty(documentState, markdown, documentState.root, documentState.warnings, groupFrames));
+    if (message) {
+      setMessage(message);
+    }
+  }
+
   function createGroupFrame(nodeIds: string[]): void {
     const uniqueIds = Array.from(new Set(nodeIds));
     if (!uniqueIds.length) {
@@ -805,8 +815,7 @@ function EditorApp() {
 
     if (hasExistingFrame) {
       const groupFrames = (documentState.groupFrames ?? []).filter((frame) => !sameFrameSet(frame));
-      commitUndoable(markDirty(documentState, documentState.markdown, documentState.root, documentState.warnings, groupFrames));
-      setMessage("已取消外框");
+      commitGroupFrames(groupFrames, "已取消外框");
       return;
     }
 
@@ -814,21 +823,19 @@ function EditorApp() {
       ...(documentState.groupFrames ?? []),
       { id: createNodeId("frame"), nodeIds: frameNodeIds, note: "备注" },
     ];
-    commitUndoable(markDirty(documentState, documentState.markdown, documentState.root, documentState.warnings, groupFrames));
-    setMessage("已添加外框");
+    commitGroupFrames(groupFrames, "已添加外框");
   }
 
   function updateGroupFrameNote(frameId: string, note: string): void {
     const groupFrames = (documentState.groupFrames ?? []).map((frame) => (
       frame.id === frameId ? { ...frame, note } : frame
     ));
-    commitUndoable(markDirty(documentState, documentState.markdown, documentState.root, documentState.warnings, groupFrames));
+    commitGroupFrames(groupFrames);
   }
 
   function deleteGroupFrame(frameId: string): void {
     const groupFrames = (documentState.groupFrames ?? []).filter((frame) => frame.id !== frameId);
-    commitUndoable(markDirty(documentState, documentState.markdown, documentState.root, documentState.warnings, groupFrames));
-    setMessage("已删除外框");
+    commitGroupFrames(groupFrames, "已删除外框");
   }
 
   function openSharePage(): void {
@@ -899,7 +906,7 @@ function EditorApp() {
     const existing = documents.find((document) => document.fileName === file.fileName);
     const parsed = parseMarkdown(markdown, file.fileName);
     const normalizedMarkdown = parsed.warnings.includes(MULTIPLE_H1_NORMALIZED_WARNING)
-      ? serializeMarkdown(parsed.root)
+      ? serializeMarkdown(parsed.root, parsed.groupFrames)
       : markdown;
 
     return ensureDocumentId({
@@ -907,7 +914,7 @@ function EditorApp() {
       fileName: file.fileName,
       markdown: normalizedMarkdown,
       root: parsed.root,
-      groupFrames: existing?.groupFrames ?? [],
+      groupFrames: parsed.groupFrames.length ? parsed.groupFrames : existing?.groupFrames ?? [],
       localModifiedAt: file.modifiedAt ?? now,
       lastSyncedAt: now,
       lastSavedMarkdown: normalizedMarkdown,
@@ -987,7 +994,7 @@ function EditorApp() {
         commitDocument({
           ...result.document,
           root: parsed.root,
-          groupFrames: result.document.groupFrames ?? [],
+          groupFrames: parsed.groupFrames,
           warnings: parsed.warnings,
         });
         setBackups((current) => [...result.backups, ...current]);

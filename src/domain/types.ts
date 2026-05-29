@@ -25,6 +25,7 @@ export interface GroupFrame {
 export interface ParseResult {
   root: MindNode;
   warnings: string[];
+  groupFrames: GroupFrame[];
 }
 
 export interface DocumentState {

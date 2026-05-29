@@ -1,5 +1,5 @@
 import { createNodeId, createStableTestId } from "./ids";
-import type { DocumentState, MindNode, ParseResult } from "./types";
+import type { DocumentState, GroupFrame, MindNode, ParseResult } from "./types";
 
 interface HeadingToken {
   level: number;
@@ -11,6 +11,12 @@ export const MULTIPLE_H1_NORMALIZED_WARNING = "Markdown has multiple H1 headings
 
 const SIDE_MARKER_PATTERN = /^<!--\s*openmind:side=(left|right)\s*-->\s*$/;
 const SIZE_MARKER_PATTERN = /^<!--\s*openmind:size=(\d+)x(\d+)\s*-->\s*$/;
+const FRAMES_MARKER_PATTERN = /^<!--\s*openmind:frames=([A-Za-z0-9+/=]+)\s*-->\s*$/;
+
+interface SerializedGroupFrame {
+  n: number[];
+  note: string;
+}
 
 function titleFromFileName(fileName: string): string {
   return fileName.replace(/\.[^.]+$/, "").trim() || "OpenMind";
@@ -81,7 +87,21 @@ export function createDefaultDocument(title = "OpenMind"): DocumentState {
 
 export function parseMarkdown(markdown: string, fileName = "OpenMind.md"): ParseResult {
   const warnings: string[] = [];
-  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  const normalized = markdown.replace(/\r\n/g, "\n");
+  let framesEncoded: string | undefined;
+  const lines = normalized.split("\n").filter((line) => {
+    const framesMatch = FRAMES_MARKER_PATTERN.exec(line.trim());
+    if (framesMatch) {
+      framesEncoded = framesMatch[1];
+      return false;
+    }
+    return true;
+  });
+  const root = buildRootFromLines(lines, fileName, warnings);
+  return { root, warnings, groupFrames: decodeGroupFrames(root, framesEncoded) };
+}
+
+function buildRootFromLines(lines: string[], fileName: string, warnings: string[]): MindNode {
   const tokens: HeadingToken[] = [];
   const prelude: string[] = [];
   let current: HeadingToken | undefined;
@@ -105,7 +125,7 @@ export function parseMarkdown(markdown: string, fileName = "OpenMind.md"): Parse
     root.note = normalizeNote(prelude);
     const pseudoTokens = tokens.map((token, index) => headingToNode(token, index));
     attachChildren(root, pseudoTokens);
-    return { root, warnings };
+    return root;
   }
 
   const h1Count = tokens.filter((token) => token.level === 1).length;
@@ -123,14 +143,14 @@ export function parseMarkdown(markdown: string, fileName = "OpenMind.md"): Parse
       level: Math.min(token.level + 1, 6),
     }, index + 1));
     attachChildren(root, shiftedNodes);
-    return { root, warnings };
+    return root;
   }
 
   const scopedTokens = tokens.slice(firstH1Index);
   const nodes = scopedTokens.map((token, index) => headingToNode(token, index));
   const root = nodes[0];
   attachChildren(root, nodes.slice(1));
-  return { root, warnings };
+  return root;
 }
 
 function attachChildren(root: MindNode, nodes: MindNode[]): void {
@@ -145,7 +165,7 @@ function attachChildren(root: MindNode, nodes: MindNode[]): void {
   }
 }
 
-export function serializeMarkdown(root: MindNode): string {
+export function serializeMarkdown(root: MindNode, groupFrames: GroupFrame[] = []): string {
   const lines: string[] = [];
 
   function visit(node: MindNode): void {
@@ -165,5 +185,99 @@ export function serializeMarkdown(root: MindNode): string {
   }
 
   visit(root);
+
+  const framesMarker = encodeGroupFrames(root, groupFrames);
+  if (framesMarker) {
+    lines.push(framesMarker, "");
+  }
+
   return lines.join("\n").replace(/\n{3,}/g, "\n\n");
+}
+
+function listNodesInOrder(root: MindNode): MindNode[] {
+  const ordered: MindNode[] = [];
+
+  function visit(node: MindNode): void {
+    ordered.push(node);
+    node.children.forEach(visit);
+  }
+
+  visit(root);
+  return ordered;
+}
+
+function encodeGroupFrames(root: MindNode, groupFrames: GroupFrame[]): string | undefined {
+  if (!groupFrames.length) {
+    return undefined;
+  }
+
+  const indexById = new Map<string, number>();
+  listNodesInOrder(root).forEach((node, index) => indexById.set(node.id, index));
+
+  const serialized: SerializedGroupFrame[] = groupFrames
+    .map((frame) => {
+      const indexes = frame.nodeIds
+        .map((nodeId) => indexById.get(nodeId))
+        .filter((index): index is number => index !== undefined)
+        .sort((left, right) => left - right);
+      return { n: indexes, note: frame.note };
+    })
+    .filter((frame) => frame.n.length > 0);
+
+  if (!serialized.length) {
+    return undefined;
+  }
+
+  return `<!-- openmind:frames=${encodeBase64Json(serialized)} -->`;
+}
+
+function decodeGroupFrames(root: MindNode, encoded?: string): GroupFrame[] {
+  if (!encoded) {
+    return [];
+  }
+
+  const parsed = decodeBase64Json<SerializedGroupFrame[]>(encoded);
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  const orderedNodes = listNodesInOrder(root);
+  return parsed
+    .map((frame, frameIndex): GroupFrame | undefined => {
+      if (!frame || !Array.isArray(frame.n)) {
+        return undefined;
+      }
+      const nodeIds = frame.n
+        .map((index) => orderedNodes[index]?.id)
+        .filter((nodeId): nodeId is string => typeof nodeId === "string");
+      if (!nodeIds.length) {
+        return undefined;
+      }
+      return {
+        id: createStableTestId("frame", frameIndex),
+        nodeIds,
+        note: typeof frame.note === "string" ? frame.note : "备注",
+      };
+    })
+    .filter((frame): frame is GroupFrame => frame !== undefined);
+}
+
+function encodeBase64Json(value: unknown): string {
+  const json = JSON.stringify(value);
+  const bytes = new TextEncoder().encode(json);
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
+}
+
+function decodeBase64Json<T>(encoded: string): T | undefined {
+  try {
+    const binary = atob(encoded);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes)) as T;
+  } catch {
+    return undefined;
+  }
 }

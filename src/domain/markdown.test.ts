@@ -169,4 +169,33 @@ Child note.
     expect(markdown).toContain("## First line<br>Second line");
     expect(parsed.root.children[0].title).toBe("First line\nSecond line");
   });
+
+  it("round-trips group frames through Markdown so they survive WebDAV sync", () => {
+    const document = createDefaultDocument("Root");
+    document.root.children.push(
+      { id: "child-a", title: "Child A", note: "", level: 2, children: [] },
+      { id: "child-b", title: "Child B", note: "", level: 2, children: [] },
+    );
+    const frames = [{ id: "frame-runtime", nodeIds: ["child-a", "child-b"], note: "外框备注" }];
+
+    const markdown = serializeMarkdown(document.root, frames);
+    expect(markdown).toContain("openmind:frames=");
+    expect(markdown).not.toContain("frame-runtime");
+
+    const parsed = parseMarkdown(markdown, "Root.md");
+    expect(parsed.groupFrames).toHaveLength(1);
+    expect(parsed.groupFrames[0].note).toBe("外框备注");
+    expect(parsed.groupFrames[0].nodeIds).toEqual([
+      parsed.root.children[0].id,
+      parsed.root.children[1].id,
+    ]);
+  });
+
+  it("omits the frame marker and returns no frames when there are none", () => {
+    const document = createDefaultDocument("Root");
+    const markdown = serializeMarkdown(document.root);
+
+    expect(markdown).not.toContain("openmind:frames=");
+    expect(parseMarkdown(markdown, "Root.md").groupFrames).toEqual([]);
+  });
 });

@@ -2125,6 +2125,38 @@ button:disabled:active {
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
+.password-field {
+  position: relative;
+  display: block;
+}
+
+.password-field input {
+  padding-right: 40px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.password-toggle:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
 .check-row {
   grid-template-columns: 18px auto;
   align-items: center;

@@ -1,5 +1,6 @@
+import { useState } from "react";
 import type { BackupEntry, WebDavConfig } from "../domain/types";
-import { XIcon } from "./Icons";
+import { EyeIcon, EyeOffIcon, XIcon } from "./Icons";
 
 interface SettingsModalProps {
   config: WebDavConfig;
@@ -12,6 +13,8 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal(props: SettingsModalProps) {
+  const [showPassword, setShowPassword] = useState(false);
+
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
       <section className="settings-modal">
@@ -38,11 +41,23 @@ export function SettingsModal(props: SettingsModalProps) {
           </label>
           <label>
             密码或应用密码
-            <input
-              type="password"
-              value={props.config.password ?? ""}
-              onChange={(event) => props.onConfigChange({ ...props.config, password: event.target.value })}
-            />
+            <span className="password-field">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={props.config.password ?? ""}
+                onChange={(event) => props.onConfigChange({ ...props.config, password: event.target.value })}
+              />
+              <button
+                aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                aria-pressed={showPassword}
+                className="password-toggle"
+                onClick={() => setShowPassword((current) => !current)}
+                title={showPassword ? "隐藏密码" : "显示密码"}
+                type="button"
+              >
+                {showPassword ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+              </button>
+            </span>
           </label>
           <label>
             远端同步目录

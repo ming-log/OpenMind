@@ -178,7 +178,8 @@ describe("mind map node dialogs", () => {
     expect(appSource).toContain("!uniqueIds.length");
     expect(appSource).toContain("sortedFrameNodeIds");
     expect(appSource).toContain("filter((frame) => !sameFrameSet(frame))");
-    expect(appSource).toContain("setMessage(\"已取消外框\")");
+    expect(appSource).toContain("commitGroupFrames(groupFrames, \"已取消外框\")");
+    expect(appSource).toContain("serializeMarkdown(documentState.root, groupFrames)");
   });
 
   it("supports blank-canvas panning and clearing every selected node", () => {
