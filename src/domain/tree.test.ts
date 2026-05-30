@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MindNode } from "./types";
-import { addChildNode, addParentNode, addSiblingNode, collectSubtreeIds, deleteNode, deleteNodes, moveSubtree, updateNodeNote, updateNodeTitle } from "./tree";
+import { addChildNode, addParentNode, addSiblingNode, cloneSubtreeWithNewIds, collectSubtreeIds, deleteNode, deleteNodes, findSubtreeAnchorIds, insertSubtree, moveSubtree, reconcileFrameNodeIds, updateNodeNote, updateNodeTitle } from "./tree";
 
 function fixture(): MindNode {
   return {
@@ -193,3 +193,70 @@ describe("tree editing helpers", () => {
     expect(collectSubtreeIds(fixture(), ["a", "b"]).sort()).toEqual(["a", "a1", "b"]);
   });
 });
+
+describe("group frame reconciliation", () => {
+  it("returns the topmost selected nodes as anchors", () => {
+    const root = fixture();
+
+    expect(findSubtreeAnchorIds(root, ["a", "a1"])).toEqual(["a"]);
+    expect(findSubtreeAnchorIds(root, ["a1", "b"]).sort()).toEqual(["a1", "b"]);
+  });
+
+  it("re-expands a frame to cover newly added children of its anchors", () => {
+    const root = fixture();
+    const frameNodeIds = collectSubtreeIds(root, ["a"]);
+    expect(frameNodeIds.sort()).toEqual(["a", "a1"]);
+
+    const withNewChild = addChildNode(root, "a", "A2", "a2");
+    const reconciled = reconcileFrameNodeIds(withNewChild, frameNodeIds);
+
+    expect(reconciled.sort()).toEqual(["a", "a1", "a2"]);
+  });
+
+  it("drops frame ids whose anchors were deleted", () => {
+    const root = fixture();
+    const frameNodeIds = collectSubtreeIds(root, ["a"]);
+    const withoutA = deleteNode(root, "a");
+
+    expect(reconcileFrameNodeIds(withoutA, frameNodeIds)).toEqual([]);
+  });
+});
+
+describe("copy and paste", () => {
+  it("clones a subtree with fresh ids while keeping titles and notes", () => {
+    const original = fixture().children[0];
+    const clone = cloneSubtreeWithNewIds(original);
+
+    expect(clone.id).not.toBe(original.id);
+    expect(clone.children[0].id).not.toBe(original.children[0].id);
+    expect(clone.title).toBe(original.title);
+    expect(clone.note).toBe(original.note);
+    expect(clone.children[0].title).toBe(original.children[0].title);
+  });
+
+  it("inserts a pasted subtree as a child with new ids and relevels it", () => {
+    const root = fixture();
+    const copied = findById(root, "a");
+    const { root: nextRoot, insertedId } = insertSubtree(root, "b", copied!);
+
+    const target = findById(nextRoot, "b");
+    expect(target?.children).toHaveLength(1);
+    const pasted = target!.children[0];
+    expect(pasted.id).toBe(insertedId);
+    expect(pasted.id).not.toBe("a");
+    expect(pasted.title).toBe("A");
+    expect(pasted.level).toBe(3);
+    expect(pasted.children[0].level).toBe(4);
+    // original subtree stays intact
+    expect(findById(nextRoot, "a")?.children).toHaveLength(1);
+  });
+});
+
+function findById(node: MindNode, id: string): MindNode | undefined {
+  if (node.id === id) return node;
+  for (const child of node.children) {
+    const found = findById(child, id);
+    if (found) return found;
+  }
+  return undefined;
+}

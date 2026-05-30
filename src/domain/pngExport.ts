@@ -25,6 +25,8 @@ export const TEXT_NODE_MIN_HEIGHT = 28;
 export const TEXT_NODE_HORIZONTAL_PADDING = 18;
 export const TEXT_NODE_MAX_WIDTH = 200;
 export const TEXT_NODE_MIN_WIDTH = 18;
+export const TEXT_NODE_AUTO_MIN_WIDTH = 72;
+export const TEXT_NODE_WIDTH_BUFFER = 10;
 export const TEXT_NODE_NOTE_GAP = 4;
 export const TEXT_NODE_NOTE_WIDTH = 14;
 export const TEXT_NODE_NOTE_SPACE = TEXT_NODE_NOTE_GAP + TEXT_NODE_NOTE_WIDTH;
@@ -152,7 +154,14 @@ function layoutSubtree(node: MindNode, direction: 1 | -1, depth: number, x: numb
 export function estimateTextNodeWidth(title: string): number {
   const widestLineWidth = estimateWidestTitleLineWidth(title);
 
-  return Math.min(TEXT_NODE_MAX_WIDTH, Math.max(TEXT_NODE_MIN_WIDTH, widestLineWidth + TEXT_NODE_HORIZONTAL_PADDING));
+  return Math.min(
+    TEXT_NODE_MAX_WIDTH,
+    Math.max(
+      TEXT_NODE_AUTO_MIN_WIDTH,
+      TEXT_NODE_MIN_WIDTH,
+      widestLineWidth + TEXT_NODE_HORIZONTAL_PADDING + TEXT_NODE_WIDTH_BUFFER,
+    ),
+  );
 }
 
 export function calculateNodeHeight(
@@ -161,7 +170,7 @@ export function calculateNodeHeight(
   layoutWidth = getNodeAutoWidth(node, visualDepth),
 ): number {
   const title = node.title.trim() || "Untitled";
-  const lineCount = estimateTitleLineCount(title, getTitleContentWidth(layoutWidth, visualDepth));
+  const lineCount = estimateTitleLineCount(title, getTitleContentWidth(layoutWidth, visualDepth, Boolean(node.note.trim())));
   const lineHeight = visualDepth === 0 ? 20 : visualDepth === 1 ? 18 : 16;
   const verticalPadding = visualDepth === 0 ? 28 : visualDepth === 1 ? 24 : 10;
   const minimum = visualDepth === 0 ? ROOT_MIN_NODE_HEIGHT : visualDepth === 1 ? MIN_NODE_HEIGHT : TEXT_NODE_MIN_HEIGHT;
@@ -204,8 +213,10 @@ function clampDimension(value: number, minimum: number, maximum: number): number
   return Math.min(maximum, Math.max(minimum, value));
 }
 
-function getTitleContentWidth(layoutWidth: number, visualDepth: number): number {
-  return Math.max(1, layoutWidth - (visualDepth <= 1 ? NODE_HORIZONTAL_PADDING : TEXT_NODE_HORIZONTAL_PADDING));
+function getTitleContentWidth(layoutWidth: number, visualDepth: number, hasNote = false): number {
+  const horizontalPadding = visualDepth <= 1 ? NODE_HORIZONTAL_PADDING : TEXT_NODE_HORIZONTAL_PADDING;
+  const noteReserve = visualDepth > 1 && hasNote ? TEXT_NODE_NOTE_SPACE : 0;
+  return Math.max(1, layoutWidth - horizontalPadding - noteReserve);
 }
 
 function estimateWidestTitleLineWidth(title: string): number {
@@ -219,9 +230,9 @@ function estimateWidestTitleLineWidth(title: string): number {
 
 function estimateTitleCharWidth(char: string): number {
   if (/\s/.test(char)) {
-    return 4;
+    return 4.5;
   }
-  return /[\u0000-\u00ff]/.test(char) ? 7.5 : 14;
+  return /[\u0000-\u00ff]/.test(char) ? 8.4 : 14.5;
 }
 
 function estimateTitleLineCount(title: string, maxLineWidth: number): number {

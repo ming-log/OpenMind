@@ -232,6 +232,27 @@ export function findNode(root: MindNode, nodeId: string): MindNode | undefined {
   return undefined;
 }
 
+export function cloneSubtreeWithNewIds(node: MindNode): MindNode {
+  return {
+    ...node,
+    id: createNodeId("node"),
+    children: node.children.map((child) => cloneSubtreeWithNewIds(child)),
+  };
+}
+
+export function insertSubtree(root: MindNode, parentId: string, subtree: MindNode, side?: NodeSide): { root: MindNode; insertedId: string } {
+  const clone = cloneSubtreeWithNewIds(subtree);
+  const nextRoot = mapNode(root, parentId, (parent) => {
+    const childSide = parent.id === root.id ? side ?? subtree.side ?? parent.children[0]?.side ?? "right" : parent.side;
+    const leveled = relevelSubtree(clone, Math.min(parent.level + 1, 6), childSide);
+    return {
+      ...parent,
+      children: [...parent.children, leveled],
+    };
+  });
+  return { root: nextRoot, insertedId: clone.id };
+}
+
 export function collectSubtreeIds(root: MindNode, nodeIds: string[]): string[] {
   const ids = new Set<string>();
 
@@ -248,4 +269,44 @@ export function collectSubtreeIds(root: MindNode, nodeIds: string[]): string[] {
   });
 
   return Array.from(ids);
+}
+
+/**
+ * Returns the "anchor" nodes of a selection: the members whose parent is not
+ * itself a member. These are the roots of the selected subtrees, and they stay
+ * stable even as descendants are added or removed.
+ */
+export function findSubtreeAnchorIds(root: MindNode, nodeIds: string[]): string[] {
+  const selected = new Set(nodeIds);
+  const parentById = new Map<string, string>();
+
+  function walk(node: MindNode): void {
+    node.children.forEach((child) => {
+      parentById.set(child.id, node.id);
+      walk(child);
+    });
+  }
+
+  walk(root);
+
+  const anchors: string[] = [];
+  for (const nodeId of nodeIds) {
+    const parentId = parentById.get(nodeId);
+    if (!parentId || !selected.has(parentId)) {
+      anchors.push(nodeId);
+    }
+  }
+
+  return anchors;
+}
+
+/**
+ * Re-expands a frame's node ids against the current tree so that the frame keeps
+ * covering the full current subtree of its anchors, even after children are
+ * added or removed. Anchors that no longer exist are dropped; an empty result
+ * means the frame should be removed.
+ */
+export function reconcileFrameNodeIds(root: MindNode, nodeIds: string[]): string[] {
+  const anchorIds = findSubtreeAnchorIds(root, nodeIds).filter((nodeId) => findNode(root, nodeId));
+  return collectSubtreeIds(root, anchorIds);
 }

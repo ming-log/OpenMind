@@ -12,8 +12,8 @@ import { exportTreeAsPng } from "./domain/pngExport";
 import { loadPersistedState, savePersistedState } from "./domain/storage";
 import { downloadRemoteMarkdown, joinWebDavPath, listRemoteMarkdownFiles, pullRemoteDocument, synchronizeDocument, testWebDavConnection, uploadRemoteText, type RemoteMarkdownFile } from "./domain/sync";
 import { getThemePreset, THEME_PRESETS } from "./domain/themes";
-import { addChildNode, addParentNode, addSiblingNode, collectSubtreeIds, deleteNodes, moveSubtree, updateNodeNote, updateNodeSize, updateNodeTitle } from "./domain/tree";
-import type { BackupEntry, DocumentState, GroupFrame, PersistedState, SharePublication, ThemeId, WebDavConfig } from "./domain/types";
+import { addChildNode, addParentNode, addSiblingNode, collectSubtreeIds, deleteNodes, findSubtreeAnchorIds, insertSubtree, moveSubtree, reconcileFrameNodeIds, updateNodeNote, updateNodeSize, updateNodeTitle } from "./domain/tree";
+import type { BackupEntry, DocumentState, GroupFrame, MindNode, PersistedState, SharePublication, ThemeId, WebDavConfig } from "./domain/types";
 
 type Mode = "map" | "markdown";
 type AppRoute =
@@ -112,6 +112,16 @@ function applyTheme(themeId: ThemeId): void {
     document.documentElement.style.setProperty(name, value);
   });
 }
+
+interface KeyboardLock {
+  lock?: (keyCodes?: string[]) => Promise<void>;
+  unlock?: () => void;
+}
+
+function getKeyboardLock(): KeyboardLock | undefined {
+  return (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
+}
+
 
 function encodeBase64Url(value: string): string {
   const bytes = new TextEncoder().encode(value);
@@ -490,6 +500,7 @@ function EditorApp() {
   const autoPullStartedRef = useRef(false);
   const remoteHistoryPullKeyRef = useRef("");
   const undoStacksRef = useRef<Record<string, DocumentState[]>>({});
+  const redoStacksRef = useRef<Record<string, DocumentState[]>>({});
   const sharePublishTimersRef = useRef<Record<string, number>>({});
   const selectedId = selectedIds[0];
 
@@ -508,6 +519,54 @@ function EditorApp() {
   useEffect(() => {
     applyTheme(themeId);
   }, [themeId]);
+
+  useEffect(() => {
+    function fullscreenchange(): void {
+      // Keep focus mode in sync when the user leaves fullscreen via Esc/F11.
+      if (!document.fullscreenElement) {
+        getKeyboardLock()?.unlock?.();
+        setFocusMode(false);
+      }
+    }
+
+    document.addEventListener("fullscreenchange", fullscreenchange);
+    return () => document.removeEventListener("fullscreenchange", fullscreenchange);
+  }, []);
+
+  function changeFocusMode(enabled: boolean): void {
+    setFocusMode(enabled);
+
+    if (enabled) {
+      void enterFocusFullscreen();
+      return;
+    }
+
+    void exitFocusFullscreen();
+  }
+
+  async function enterFocusFullscreen(): Promise<void> {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen?.();
+      }
+      // Keep Esc inside the app (close drawers/dialogs) instead of letting the
+      // browser immediately leave fullscreen. Chromium-only; ignored elsewhere.
+      await getKeyboardLock()?.lock?.(["Escape"]);
+    } catch {
+      // Fullscreen or keyboard lock can be rejected; focus mode still applies.
+    }
+  }
+
+  async function exitFocusFullscreen(): Promise<void> {
+    try {
+      getKeyboardLock()?.unlock?.();
+      if (document.fullscreenElement) {
+        await document.exitFullscreen?.();
+      }
+    } catch {
+      // Ignore exit failures.
+    }
+  }
 
   useEffect(() => {
     return () => {
@@ -535,9 +594,19 @@ function EditorApp() {
 
   useEffect(() => {
     function keydown(event: KeyboardEvent): void {
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        redoLastChange();
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
         undoLastChange();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        redoLastChange();
         return;
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
@@ -605,6 +674,10 @@ function EditorApp() {
       ...undoStacksRef.current,
       [documentId]: [documentState, ...(undoStacksRef.current[documentId] ?? [])].slice(0, 80),
     };
+    redoStacksRef.current = {
+      ...redoStacksRef.current,
+      [documentId]: [],
+    };
     commitDocument(next);
   }
 
@@ -621,9 +694,35 @@ function EditorApp() {
       ...undoStacksRef.current,
       [documentId]: stack.slice(1),
     };
+    redoStacksRef.current = {
+      ...redoStacksRef.current,
+      [documentId]: [documentState, ...(redoStacksRef.current[documentId] ?? [])].slice(0, 80),
+    };
     commitDocument(previous);
     setSelectedIds([previous.root.id]);
     setMessage("已撤销上次操作");
+  }
+
+  function redoLastChange(): void {
+    const documentId = documentState.id ?? activeDocumentId;
+    const stack = redoStacksRef.current[documentId] ?? [];
+    const nextState = stack[0];
+    if (!nextState) {
+      setMessage("没有可重做的操作");
+      return;
+    }
+
+    redoStacksRef.current = {
+      ...redoStacksRef.current,
+      [documentId]: stack.slice(1),
+    };
+    undoStacksRef.current = {
+      ...undoStacksRef.current,
+      [documentId]: [documentState, ...(undoStacksRef.current[documentId] ?? [])].slice(0, 80),
+    };
+    commitDocument(nextState);
+    setSelectedIds([nextState.root.id]);
+    setMessage("已重做上次操作");
   }
 
   function replaceDocument(next: DocumentState): void {
@@ -683,6 +782,9 @@ function EditorApp() {
     undoStacksRef.current = Object.fromEntries(
       Object.entries(undoStacksRef.current).filter(([documentId]) => documentId !== taskDeleteTarget.documentId),
     );
+    redoStacksRef.current = Object.fromEntries(
+      Object.entries(redoStacksRef.current).filter(([documentId]) => documentId !== taskDeleteTarget.documentId),
+    );
     setDocuments(result.documents);
     setDocumentState(result.activeDocument);
     setActiveDocumentId(result.activeDocument.id ?? "");
@@ -738,7 +840,7 @@ function EditorApp() {
   }
 
   function updateRoot(nextRoot: DocumentState["root"]): void {
-    const groupFrames = documentState.groupFrames ?? [];
+    const groupFrames = reconcileGroupFrames(nextRoot, documentState.groupFrames ?? []);
     const markdown = serializeMarkdown(nextRoot, groupFrames);
     commitUndoable(markDirty(documentState, markdown, nextRoot, documentState.warnings, groupFrames));
   }
@@ -789,6 +891,23 @@ function EditorApp() {
     setMessage("已移动节点");
   }
 
+  function pasteNode(parentId: string, subtree: MindNode): void {
+    const { root: nextRoot, insertedId } = insertSubtree(documentState.root, parentId, subtree);
+    if (nextRoot === documentState.root) {
+      return;
+    }
+
+    updateRoot(nextRoot);
+    setSelectedIds([insertedId]);
+    setMessage("已粘贴节点");
+  }
+
+  function reconcileGroupFrames(root: DocumentState["root"], groupFrames: GroupFrame[]): GroupFrame[] {
+    return groupFrames
+      .map((frame) => ({ ...frame, nodeIds: reconcileFrameNodeIds(root, frame.nodeIds) }))
+      .filter((frame) => frame.nodeIds.length > 0);
+  }
+
   function commitGroupFrames(groupFrames: GroupFrame[], message?: string): void {
     const markdown = serializeMarkdown(documentState.root, groupFrames);
     commitUndoable(markDirty(documentState, markdown, documentState.root, documentState.warnings, groupFrames));
@@ -805,11 +924,11 @@ function EditorApp() {
     }
 
     const frameNodeIds = collectSubtreeIds(documentState.root, uniqueIds);
-    const sortedFrameNodeIds = [...frameNodeIds].sort();
+    const selectionAnchors = [...findSubtreeAnchorIds(documentState.root, frameNodeIds)].sort();
     const sameFrameSet = (frame: GroupFrame) => {
-      const sortedExistingIds = [...frame.nodeIds].sort();
-      return sortedExistingIds.length === sortedFrameNodeIds.length
-        && sortedExistingIds.every((nodeId, index) => nodeId === sortedFrameNodeIds[index]);
+      const frameAnchors = [...findSubtreeAnchorIds(documentState.root, frame.nodeIds)].sort();
+      return frameAnchors.length === selectionAnchors.length
+        && frameAnchors.every((nodeId, index) => nodeId === selectionAnchors[index]);
     };
     const hasExistingFrame = (documentState.groupFrames ?? []).some(sameFrameSet);
 
@@ -1117,8 +1236,13 @@ function EditorApp() {
             onCreateGroupFrame={createGroupFrame}
             onUpdateGroupFrameNote={updateGroupFrameNote}
             onDeleteGroupFrame={deleteGroupFrame}
+            onPasteNode={pasteNode}
+            onUndo={undoLastChange}
+            onRedo={redoLastChange}
+            canUndo={(undoStacksRef.current[activeDocumentId] ?? []).length > 0}
+            canRedo={(redoStacksRef.current[activeDocumentId] ?? []).length > 0}
             focusMode={focusMode}
-            onFocusModeChange={setFocusMode}
+            onFocusModeChange={changeFocusMode}
             shortcutsDisabled={taskDeleteTarget !== null}
           />
         )}
@@ -1367,6 +1491,7 @@ function SharePage(props: SharePageProps) {
           onCreateGroupFrame={() => undefined}
           onUpdateGroupFrameNote={() => undefined}
           onDeleteGroupFrame={() => undefined}
+          onPasteNode={() => undefined}
           focusMode={false}
           onFocusModeChange={() => undefined}
           shortcutsDisabled

@@ -176,7 +176,8 @@ describe("mind map node dialogs", () => {
     expect(stylesSource).not.toContain(".group-frame-brace");
     expect(stylesSource).not.toContain(".group-frame-delete");
     expect(appSource).toContain("!uniqueIds.length");
-    expect(appSource).toContain("sortedFrameNodeIds");
+    expect(appSource).toContain("selectionAnchors");
+    expect(appSource).toContain("findSubtreeAnchorIds");
     expect(appSource).toContain("filter((frame) => !sameFrameSet(frame))");
     expect(appSource).toContain("commitGroupFrames(groupFrames, \"已取消外框\")");
     expect(appSource).toContain("serializeMarkdown(documentState.root, groupFrames)");
@@ -230,6 +231,56 @@ describe("mind map node dialogs", () => {
     expect(dragPreviewStyles).toContain("will-change: transform");
     expect(dragPreviewStyles).toContain("transition: opacity 0.12s linear, box-shadow 0.12s linear;");
     expect(dragPreviewStyles).not.toContain("transition: var(--transition)");
+  });
+
+  it("only moves a node after the pointer passes the click-drag threshold", () => {
+    expect(canvasSource).toContain("nodeDragMovedRef");
+    expect(canvasSource).toContain("distance <= CLICK_DRAG_THRESHOLD");
+    expect(canvasSource).toContain("if (!moved)");
+    expect(canvasSource).toContain("if (nodeDragMovedRef.current) {");
+  });
+
+  it("starts inline title editing when typing a printable key on a selected node", () => {
+    expect(canvasSource).toContain("isPrintableTypingEvent");
+    expect(canvasSource).toContain("startTitleEdit(selected.node, nextValue)");
+    expect(canvasSource).toContain("event.ctrlKey || event.metaKey || event.altKey");
+    expect(canvasSource).toContain("Array.from(event.key).length === 1");
+  });
+
+  it("appends typed characters unless the title is a placeholder", () => {
+    expect(canvasSource).toContain('currentTitle === "新节点"');
+    expect(canvasSource).toContain('currentTitle === "Untitled"');
+    expect(canvasSource).toContain("isPlaceholderTitle ? event.key : currentTitle + event.key");
+  });
+
+  it("supports copy and paste of node subtrees", () => {
+    expect(canvasSource).toContain("clipboardRef");
+    expect(canvasSource).toContain("cloneSubtreeForClipboard");
+    expect(canvasSource).toContain("props.onPasteNode(selectedId, copied)");
+    expect(canvasSource).toContain("复制节点");
+    expect(canvasSource).toContain("粘贴为子节点");
+    expect(appSource).toContain("function pasteNode");
+    expect(appSource).toContain("insertSubtree");
+  });
+
+  it("confirms node deletion with Enter and cancels with Escape", () => {
+    expect(canvasSource).toContain("if (!deleteTarget) return undefined;");
+    expect(canvasSource).toContain('event.key === "Enter"');
+    expect(canvasSource).toContain("confirmDelete();");
+  });
+
+  it("shows a keyboard shortcuts reference from the canvas controls", () => {
+    const shortcutsSource = readFileSync(new URL("./ShortcutsModal.tsx", import.meta.url), "utf-8");
+
+    expect(canvasSource).toContain("ShortcutsModal");
+    expect(canvasSource).toContain("setShortcutsOpen");
+    expect(canvasSource).toContain("KeyboardIcon");
+    expect(canvasSource).toContain("快捷键说明");
+    expect(shortcutsSource).toContain("SHORTCUT_GROUPS");
+    expect(shortcutsSource).toContain("<kbd>");
+    expect(shortcutsSource).toContain('event.key === "Escape"');
+    expect(stylesSource).toContain(".shortcuts-modal");
+    expect(iconsSource).toContain("export function KeyboardIcon");
   });
 
   it("keeps wheel zoom anchored to the pointer instead of the canvas origin", () => {
@@ -294,6 +345,22 @@ describe("mind map node dialogs", () => {
     expect(canvasSource).toContain("onFocusModeChange");
     expect(canvasSource).toContain("进入专注模式");
     expect(iconsSource).toContain("m8 8-5-5");
+  });
+
+  it("ties focus mode to browser fullscreen and restores it on exit", () => {
+    expect(appSource).toContain("function changeFocusMode");
+    expect(appSource).toContain("requestFullscreen");
+    expect(appSource).toContain("exitFullscreen");
+    expect(appSource).toContain('addEventListener("fullscreenchange"');
+    expect(appSource).toContain("onFocusModeChange={changeFocusMode}");
+  });
+
+  it("keeps Esc closing overlays before leaving focus-mode fullscreen", () => {
+    expect(appSource).toContain("getKeyboardLock");
+    expect(appSource).toContain('lock?.(["Escape"])');
+    expect(canvasSource).toContain("if (!props.focusMode) return undefined;");
+    expect(canvasSource).toContain("titleEditor || noteDrawer || deleteTarget || menu || frameEditor || nodeResize");
+    expect(canvasSource).toContain("props.onFocusModeChange(false)");
   });
 
   it("uses clearer icons for auto layout, focus mode, and sharing", () => {

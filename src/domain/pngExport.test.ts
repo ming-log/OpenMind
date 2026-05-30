@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateNodeHeight, estimateTextNodeWidth, EXPORT_FONT_FAMILY, getNodeLayoutWidth, layoutTree, NODE_AUTO_MAX_WIDTH, NODE_MAX_WIDTH, NODE_WIDTH, wrapCanvasTextLines } from "./pngExport";
+import { calculateNodeHeight, estimateTextNodeWidth, EXPORT_FONT_FAMILY, getNodeLayoutWidth, layoutTree, NODE_AUTO_MAX_WIDTH, NODE_MAX_WIDTH, NODE_WIDTH, TEXT_NODE_MIN_HEIGHT, wrapCanvasTextLines } from "./pngExport";
 import pngExportSource from "./pngExport.ts?raw";
 import type { MindNode } from "./types";
 
@@ -133,8 +133,43 @@ describe("layoutTree", () => {
     expect(component && leaf ? leaf.x - component.x : undefined).toBeCloseTo(estimateTextNodeWidth("Component") + 28);
   });
 
-  it("keeps two-character text labels wide enough for one line plus side padding", () => {
-    expect(estimateTextNodeWidth("测试")).toBe(46);
+  it("gives short text labels a consistent minimum width so siblings line up", () => {
+    expect(estimateTextNodeWidth("测试")).toBe(72);
+    expect(estimateTextNodeWidth("A")).toBe(72);
+    expect(estimateTextNodeWidth("新")).toBe(72);
+  });
+
+  it("reserves enough height that wrapping text labels never overlap their siblings", () => {
+    const longLabel = "11111111111111111111111111111111111111111111";
+    const root: MindNode = {
+      id: "root",
+      title: "Root",
+      note: "",
+      level: 1,
+      children: [
+        { id: "first", title: longLabel, note: "", level: 3, side: "right", children: [] },
+        { id: "second", title: longLabel, note: "", level: 3, side: "right", children: [] },
+      ],
+    };
+
+    const byId = new Map(layoutTree(root).map((entry) => [entry.node.id, entry]));
+    const first = byId.get("first");
+    const second = byId.get("second");
+
+    expect(first && second ? second.y >= first.y + first.height : undefined).toBe(true);
+  });
+
+  it("keeps a note-bearing leaf label on one line when it fits under the max width", () => {
+    const labelWithNote: MindNode = {
+      id: "chrome",
+      title: "Chrome驱动",
+      note: "进阶用法说明",
+      level: 4,
+      children: [],
+    };
+
+    const width = getNodeLayoutWidth(labelWithNote, 2);
+    expect(calculateNodeHeight(labelWithNote, 2, width)).toBe(TEXT_NODE_MIN_HEIGHT);
   });
 
   it("grows framed node width with text up to the automatic wrapping width", () => {

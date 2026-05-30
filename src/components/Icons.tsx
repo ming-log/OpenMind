@@ -318,3 +318,30 @@ export function EyeOffIcon(props: IconProps) {
     </IconBase>
   );
 }
+
+export function UndoIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h11a5 5 0 0 1 5 5v0a5 5 0 0 1-5 5H7" />
+    </IconBase>
+  );
+}
+
+export function RedoIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="m15 14 5-5-5-5" />
+      <path d="M20 9H9a5 5 0 0 0-5 5v0a5 5 0 0 0 5 5h8" />
+    </IconBase>
+  );
+}
+
+export function KeyboardIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" />
+    </IconBase>
+  );
+}

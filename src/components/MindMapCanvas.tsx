@@ -4,8 +4,9 @@ import { calculateNodeHeight, getNodeLayoutHeight, getNodeLayoutWidth, layoutTre
 import { getIntersectingNodeIds, normalizeSelectionBox, type SelectableNodeRect, type SelectionBox } from "../domain/selection";
 import type { ThemeId, ThemePreset } from "../domain/themes";
 import type { GroupFrame, MindNode } from "../domain/types";
-import { AddChildNodeIcon, AddParentNodeIcon, AddSiblingNodeIcon, AutoLayoutIcon, FocusIcon, FrameIcon, MinusIcon, NoteDotIcon, TargetIcon, XIcon, ZoomInArrowIcon } from "./Icons";
+import { AddChildNodeIcon, AddParentNodeIcon, AddSiblingNodeIcon, AutoLayoutIcon, FocusIcon, FrameIcon, KeyboardIcon, MinusIcon, NoteDotIcon, RedoIcon, TargetIcon, UndoIcon, XIcon, ZoomInArrowIcon } from "./Icons";
 import { NoteBubble, NoteMarkdownContent } from "./NoteBubble";
+import { ShortcutsModal } from "./ShortcutsModal";
 import { ThemePicker } from "./ThemePicker";
 
 interface MindMapCanvasProps {
@@ -30,6 +31,11 @@ interface MindMapCanvasProps {
   onCreateGroupFrame: (nodeIds: string[]) => void;
   onUpdateGroupFrameNote: (frameId: string, note: string) => void;
   onDeleteGroupFrame: (frameId: string) => void;
+  onPasteNode: (parentId: string, subtree: MindNode) => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
   focusMode: boolean;
   onFocusModeChange: (enabled: boolean) => void;
   shortcutsDisabled?: boolean;
@@ -148,6 +154,8 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
   const dragFrameRef = useRef<number | null>(null);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const suppressClickRef = useRef(false);
+  const nodeDragMovedRef = useRef(false);
+  const clipboardRef = useRef<MindNode | null>(null);
   const frameTopReserves = useMemo(() => {
     const parentById = new Map<string, string>();
     const siblingIndexById = new Map<string, number>();
@@ -272,6 +280,7 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
   const [noteDrawer, setNoteDrawer] = useState<NoteDrawer | null>(null);
   const [frameEditor, setFrameEditor] = useState<FrameEditor | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [activeDropIntent, setActiveDropIntent] = useState<DropIntent | undefined>();
   const titleInputRef = useRef<HTMLTextAreaElement>(null);
   const noteInputRef = useRef<HTMLTextAreaElement>(null);
@@ -387,9 +396,51 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
     return () => window.removeEventListener("keydown", keydown);
   }, [noteDrawer]);
 
-  function startTitleEdit(node: MindNode): void {
+  useEffect(() => {
+    if (!deleteTarget) return undefined;
+
+    function keydown(event: KeyboardEvent): void {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        confirmDelete();
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setDeleteTarget(null);
+      }
+    }
+
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, [deleteTarget]);
+
+  useEffect(() => {
+    if (!props.focusMode) return undefined;
+
+    function keydown(event: KeyboardEvent): void {
+      if (event.key !== "Escape") {
+        return;
+      }
+      // Let any open overlay consume Esc first (close drawer/dialog/menu/editor).
+      if (titleEditor || noteDrawer || deleteTarget || menu || frameEditor || nodeResize) {
+        return;
+      }
+      if (selectedFrameId) {
+        setSelectedFrameId(null);
+        return;
+      }
+      event.preventDefault();
+      props.onFocusModeChange(false);
+    }
+
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, [props, titleEditor, noteDrawer, deleteTarget, menu, frameEditor, nodeResize, selectedFrameId]);
+
+  function startTitleEdit(node: MindNode, initialValue?: string): void {
     if (props.readOnly) return;
-    setTitleEditor({ nodeId: node.id, value: node.title });
+    setTitleEditor({ nodeId: node.id, value: initialValue ?? node.title });
     setDeleteTarget(null);
     setMenu(null);
   }
@@ -493,6 +544,22 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
     }
     const tagName = target.tagName.toLowerCase();
     return target.isContentEditable || tagName === "input" || tagName === "textarea" || tagName === "select";
+  }
+
+  function isPrintableTypingEvent(event: KeyboardEvent): boolean {
+    if (event.ctrlKey || event.metaKey || event.altKey) {
+      return false;
+    }
+    // A single printable character (letters, digits, punctuation, CJK, etc.).
+    // Keys like "Enter", "Tab", "ArrowUp" report multi-character names.
+    return Array.from(event.key).length === 1 && event.key !== " ";
+  }
+
+  function cloneSubtreeForClipboard(node: MindNode): MindNode {
+    return {
+      ...node,
+      children: node.children.map((child) => cloneSubtreeForClipboard(child)),
+    };
   }
 
   function isCanvasSurfaceTarget(target: EventTarget | null): boolean {
@@ -637,12 +704,22 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
       dragFrameRef.current = null;
     }
     dragOffsetRef.current = { x: 0, y: 0 };
+    nodeDragMovedRef.current = false;
     if (dragPreviewRef.current) {
       dragPreviewRef.current.style.transform = "";
     }
   }
 
   function scheduleNodeDragPreview(drag: NodeDrag, clientX: number, clientY: number): void {
+    if (!nodeDragMovedRef.current) {
+      const distance = Math.hypot(clientX - drag.startX, clientY - drag.startY);
+      if (distance <= CLICK_DRAG_THRESHOLD) {
+        return;
+      }
+      nodeDragMovedRef.current = true;
+      suppressClickRef.current = true;
+    }
+
     dragOffsetRef.current = {
       x: (clientX - drag.startX) / scale,
       y: (clientY - drag.startY) / scale,
@@ -669,9 +746,15 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
   }
 
   function finishNodeDrag(drag: NodeDrag, clientX: number, clientY: number, excludedIds: Set<string>): void {
-    const intent = findDropIntent(getDragIntentPoint(drag, clientX, clientY), getDropNodeRects(), excludedIds);
+    const moved = nodeDragMovedRef.current;
     resetNodeDragPreview();
     setActiveDropIntent(undefined);
+    nodeDragMovedRef.current = false;
+    if (!moved) {
+      setNodeDrag(null);
+      return;
+    }
+    const intent = findDropIntent(getDragIntentPoint(drag, clientX, clientY), getDropNodeRects(), excludedIds);
     if (intent) {
       props.onMoveSubtree(drag.nodeId, intent.parentId, intent.index, intent.side);
     }
@@ -838,12 +921,13 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
     const activeDrag = nodeDrag;
 
     function mousemove(event: MouseEvent): void {
-      suppressClickRef.current = true;
       scheduleNodeDragPreview(activeDrag, event.clientX, event.clientY);
     }
 
     function mouseup(event: MouseEvent): void {
-      suppressClickRef.current = true;
+      if (nodeDragMovedRef.current) {
+        suppressClickRef.current = true;
+      }
       finishNodeDrag(activeDrag, event.clientX, event.clientY, draggedIds);
     }
 
@@ -914,11 +998,41 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
         requestDelete(props.selectedIds.length ? props.selectedIds : [selectedId]);
         return;
       }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
+        const selected = byId.get(selectedId);
+        if (selected && selected.node.id !== props.root.id) {
+          event.preventDefault();
+          clipboardRef.current = cloneSubtreeForClipboard(selected.node);
+        }
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
+        const copied = clipboardRef.current;
+        if (copied) {
+          event.preventDefault();
+          setMenu(null);
+          props.onPasteNode(selectedId, copied);
+        }
+        return;
+      }
       if (event.key === "`" || event.code === "Backquote") {
         event.preventDefault();
         const selected = byId.get(selectedId);
         if (selected) {
           openNoteDrawer(selected.node);
+        }
+        return;
+      }
+
+      if (isPrintableTypingEvent(event)) {
+        const selected = byId.get(selectedId);
+        if (selected) {
+          event.preventDefault();
+          setMenu(null);
+          const currentTitle = selected.node.title;
+          const isPlaceholderTitle = currentTitle === "新节点" || currentTitle === "Untitled" || currentTitle.trim() === "";
+          const nextValue = isPlaceholderTitle ? event.key : currentTitle + event.key;
+          startTitleEdit(selected.node, nextValue);
         }
       }
     }
@@ -1303,6 +1417,27 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
     >
       {!props.readOnly ? <ThemePicker themeId={props.themeId} themes={props.themes} onThemeChange={props.onThemeChange} /> : null}
       <div className="canvas-controls">
+        {!props.readOnly ? (
+          <>
+            <button
+              disabled={!props.canUndo}
+              onClick={() => props.onUndo?.()}
+              title="撤销 (Ctrl+Z)"
+              type="button"
+            >
+              <UndoIcon />
+            </button>
+            <button
+              disabled={!props.canRedo}
+              onClick={() => props.onRedo?.()}
+              title="重做 (Ctrl+Y)"
+              type="button"
+            >
+              <RedoIcon />
+            </button>
+            <span className="canvas-control-separator" aria-hidden="true" />
+          </>
+        ) : null}
         <button onClick={() => zoomAtViewportCenter((value) => value - 0.1)} title="缩小" type="button"><MinusIcon /></button>
         <span className="canvas-zoom-value">{Math.round(scale * 100)}%</span>
         <button onClick={() => zoomAtViewportCenter((value) => value + 0.1)} title="放大" type="button"><ZoomInArrowIcon /></button>
@@ -1381,6 +1516,15 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
             <FocusIcon />
           </button>
         ) : null}
+        <span className="canvas-control-separator" aria-hidden="true" />
+        <button
+          className={shortcutsOpen ? "active" : ""}
+          onClick={() => setShortcutsOpen(true)}
+          title="快捷键说明"
+          type="button"
+        >
+          <KeyboardIcon />
+        </button>
       </div>
       <div
         ref={viewportRef}
@@ -1716,6 +1860,27 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
           <button onClick={() => openNoteDrawer(menu.node)}>编辑批注</button>
           <button
             disabled={menu.node.id === props.root.id}
+            onClick={() => {
+              clipboardRef.current = cloneSubtreeForClipboard(menu.node);
+              setMenu(null);
+            }}
+            title={menu.node.id === props.root.id ? "根节点不能复制" : undefined}
+          >
+            复制节点
+          </button>
+          <button
+            disabled={!clipboardRef.current}
+            onClick={() => {
+              if (clipboardRef.current) {
+                props.onPasteNode(menu.node.id, clipboardRef.current);
+              }
+              setMenu(null);
+            }}
+          >
+            粘贴为子节点
+          </button>
+          <button
+            disabled={menu.node.id === props.root.id}
             onClick={() => requestDelete([menu.node.id])}
             title={menu.node.id === props.root.id ? "根节点不能删除" : undefined}
           >
@@ -1801,11 +1966,12 @@ export function MindMapCanvas(props: MindMapCanvasProps) {
             <p>{deleteTarget.count === 1 ? "会同时删除它下面的全部子节点。" : "会同时删除这些节点下面的全部子节点。"}</p>
             <footer>
               <button type="button" onClick={() => setDeleteTarget(null)}>取消</button>
-              <button className="danger-button" type="button" onClick={confirmDelete}>删除</button>
+              <button autoFocus className="danger-button" type="button" onClick={confirmDelete}>删除</button>
             </footer>
           </section>
         </div>
       ) : null}
+      {shortcutsOpen ? <ShortcutsModal onClose={() => setShortcutsOpen(false)} /> : null}
     </section>
   );
 }
